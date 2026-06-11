@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getCellsDir, readYaml, writeYaml, cellFilePath } = require('./store');
+const { getCellsDir, readYaml, writeYaml, cellFilePath, listDirty, readCell } = require('./store');
 const { extractDepId } = require('./validate');
 
 function buildGraph(rootDir) {
@@ -309,6 +309,25 @@ function confirmCell(rootDir, cellId, module = 'all') {
   }
 
   writeYaml(filePath, cell);
+
+  // 自动清除 dirty：检查每个 dirty Cell 的下游是否还有 stale
+  const { dirty_cells } = listDirty(rootDir);
+  for (const dc of dirty_cells) {
+    const { affected } = impactAnalysis(rootDir, dc.cell);
+    const hasDownstreamStale = affected.some(depId => {
+      try {
+        const depCell = readCell(rootDir, depId);
+        return depCell._stale && Object.values(depCell._stale).some(v => v === true);
+      } catch { return false; }
+    });
+    if (!hasDownstreamStale) {
+      const dirtyFilePath = cellFilePath(rootDir, dc.cell);
+      const dirtyCell = readYaml(dirtyFilePath);
+      delete dirtyCell._dirty;
+      writeYaml(dirtyFilePath, dirtyCell);
+    }
+  }
+
   return { confirmed: cellId, cleared };
 }
 

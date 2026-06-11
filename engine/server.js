@@ -49,6 +49,8 @@ const {
   saveModuleDraft,
   readModuleDraft,
   clearModuleDraft,
+  markDirty,
+  listDirty,
 } = require('./lib/store');
 
 const app = express();
@@ -166,14 +168,14 @@ app.put('/api/cells/:id/:module', getRootDir, (req, res) => {
 app.post('/api/cells/:id/confirm-module', getRootDir, (req, res) => {
   try {
     const { id } = req.params;
-    const { module, data } = req.body || {};
+    const { module, data, force, source } = req.body || {};
     const validModules = ['intent', 'plan', 'contract', 'test', 'schema', 'states', 'invariants', 'requires_state'];
     if (!validModules.includes(module)) {
       return res.status(400).json({ error: `无效模块: ${module}` });
     }
 
     const evalResult = evaluateGlobalImpact(req.rootDir, id, module, data);
-    if (evalResult.blocked) {
+    if (evalResult.blocked && !force) {
       const draft = saveModuleDraft(req.rootDir, id, module, data, {
         blocked: true,
         reasons: evalResult.reasons,
@@ -194,7 +196,12 @@ app.post('/api/cells/:id/confirm-module', getRootDir, (req, res) => {
     clearModuleDraft(req.rootDir, id, module);
     confirmCell(req.rootDir, id, module);
     const propagated = propagateChange(req.rootDir, id);
-    
+
+    // Web 端操作标记 dirty
+    if (source === 'web') {
+      markDirty(req.rootDir, id, module);
+    }
+
     let resonance_marked = [];
     if (module === 'requires_state') {
       resonance_marked = triggerResonance(req.rootDir, id, data);
@@ -208,6 +215,7 @@ app.post('/api/cells/:id/confirm-module', getRootDir, (req, res) => {
       affected_cell_impacted_modules: evalResult.affected_cell_impacted_modules,
       marked_stale: propagated.marked_stale,
       resonance_marked,
+      forced: evalResult.blocked && force,
     });
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -404,6 +412,14 @@ app.post('/api/cells/:id/propagate', getRootDir, (req, res) => {
 app.get('/api/stale', getRootDir, (req, res) => {
   try {
     res.json(listStale(req.rootDir));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/dirty', getRootDir, (req, res) => {
+  try {
+    res.json(listDirty(req.rootDir));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

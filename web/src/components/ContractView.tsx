@@ -1,4 +1,8 @@
-import type { ContractItem, ContractField, ContractError } from '../types';
+import type { ContractItem, LegacyContractItem, ContractField, ContractError } from '../types';
+
+function isLegacyItem(item: ContractItem | LegacyContractItem): item is LegacyContractItem {
+  return 'when' in item && 'then' in item && !('name' in item);
+}
 
 function FieldTable({ label, fields, color }: { label: string; fields?: ContractField[]; color: string }) {
   if (!fields || fields.length === 0) return null;
@@ -50,45 +54,87 @@ function ErrorList({ errors }: { errors?: ContractError[] }) {
   );
 }
 
-export default function ContractView({ items }: { items: ContractItem[] }) {
+export default function ContractView({ items }: { items: (ContractItem | LegacyContractItem)[] }) {
   if (items.length === 0) {
     return <div style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)', padding: 'var(--space-md)' }}>No contracts defined</div>;
   }
   return (
     <div>
-      {items.map((item, i) => (
-        <div key={i} className="card" style={{ marginBottom: 'var(--space-sm)' }}>
-          <div className="card-header" style={{ padding: 'var(--space-sm) var(--space-md)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-              <span
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  background: 'var(--primary-light)',
-                  color: 'var(--primary)',
-                  fontSize: 'var(--text-xs)',
-                  fontWeight: 'var(--font-bold)',
-                }}
-              >
-                {i + 1}
-              </span>
-              <span style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)', color: 'var(--text)' }}>
-                {item.name}
-              </span>
-              {item.description && (
-                <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
-                  — {item.description}
+      {items.map((item, i) =>
+        isLegacyItem(item) ? (
+          <div key={i} className="card" style={{ marginBottom: 'var(--space-sm)' }}>
+            <div className="card-header" style={{ padding: 'var(--space-sm) var(--space-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'var(--primary-light)',
+                    color: 'var(--primary)',
+                    fontSize: 'var(--text-xs)',
+                    fontWeight: 'var(--font-bold)',
+                  }}
+                >
+                  {i + 1}
                 </span>
-              )}
+                <span style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)', color: 'var(--info)' }}>
+                  WHEN
+                </span>
+              </div>
+            </div>
+            <div className="card-body" style={{ padding: 'var(--space-md)' }}>
+              <div style={{ marginBottom: 'var(--space-sm)' }}>
+                <div style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)', color: 'var(--text)', marginBottom: 'var(--space-xs)' }}>
+                  条件
+                </div>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, padding: 'var(--space-xs) var(--space-sm)', background: 'var(--bg-secondary)', borderRadius: 4 }}>
+                  {item.when}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)', color: 'var(--text)', marginBottom: 'var(--space-xs)' }}>
+                  预期行为
+                </div>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, padding: 'var(--space-xs) var(--space-sm)', background: 'var(--bg-secondary)', borderRadius: 4 }}>
+                  {item.then}
+                </div>
+              </div>
             </div>
           </div>
-          <div className="card-body" style={{ padding: 'var(--space-md)' }}>
-            <FieldTable label="Inputs" fields={item.inputs} color="var(--info)" />
-            <FieldTable label="Outputs" fields={item.outputs} color="var(--success)" />
-            <ErrorList errors={item.errors} />
+        ) : (
+          <div key={i} className="card" style={{ marginBottom: 'var(--space-sm)' }}>
+            <div className="card-header" style={{ padding: 'var(--space-sm) var(--space-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'var(--primary-light)',
+                    color: 'var(--primary)',
+                    fontSize: 'var(--text-xs)',
+                    fontWeight: 'var(--font-bold)',
+                  }}
+                >
+                  {i + 1}
+                </span>
+                <span style={{ fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)', color: 'var(--text)' }}>
+                  {item.name}
+                </span>
+                {item.description && (
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+                    — {item.description}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="card-body" style={{ padding: 'var(--space-md)' }}>
+              <FieldTable label="Inputs" fields={item.inputs} color="var(--info)" />
+              <FieldTable label="Outputs" fields={item.outputs} color="var(--success)" />
+              <ErrorList errors={item.errors} />
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      )}
     </div>
   );
 }

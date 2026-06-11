@@ -294,6 +294,36 @@ function listDeltas(rootDir) {
   return { deltas };
 }
 
+function markDirty(rootDir, cellId, module) {
+  const filePath = cellFilePath(rootDir, cellId);
+  if (!fs.existsSync(filePath)) return;
+  const cell = readYaml(filePath);
+  cell._dirty = cell._dirty || {};
+  cell._dirty[module] = true;
+  writeYaml(filePath, cell);
+}
+
+function listDirty(rootDir) {
+  const cellsDir = getCellsDir(rootDir);
+  if (!fs.existsSync(cellsDir)) {
+    return { dirty_cells: [] };
+  }
+  const files = fs.readdirSync(cellsDir).filter(f => f.endsWith('.yaml'));
+  const dirtyCells = [];
+  for (const f of files) {
+    const data = readYaml(path.join(cellsDir, f));
+    if (data._dirty) {
+      const dirtyModules = Object.entries(data._dirty)
+        .filter(([, v]) => v === true)
+        .map(([k]) => k);
+      if (dirtyModules.length > 0) {
+        dirtyCells.push({ cell: data.id, dirty_modules: dirtyModules });
+      }
+    }
+  }
+  return { dirty_cells: dirtyCells };
+}
+
 module.exports = {
   findProjectRoot,
   getSddDir,
@@ -319,4 +349,6 @@ module.exports = {
   saveModuleDraft,
   readModuleDraft,
   clearModuleDraft,
+  markDirty,
+  listDirty,
 };

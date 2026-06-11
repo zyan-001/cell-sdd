@@ -35,12 +35,12 @@ engine:
 - **禁止的行为：**
   - 使用任何方式直接修改 `.sdd/` 下的文件（包括但不限于 `Write` 工具、编辑器批量替换等）。
   - 由 Skill 主动创建或维护长期存在的 YAML/JSON 规范文件（Glossary、Cells、Deltas 等）。
-- **允许的只是“技术性参数传递”**（一次性给引擎喂数据）：
-  - 推荐优先使用 `--data`，在 PowerShell 下通过**外层双引号 + 内层转义双引号** 构造 JSON，例如：
-    - `node <engine-path>/cell.js glossary-add-term --data "{\"term\":\"Claim\",\"definition\":\"...\",\"aliases\":[\"结论\"]}"`
-  - 当 JSON 过于复杂、`--data` quoting 成本过高时，可以由 **人类** 在编辑器中创建一个临时 `temp.json` 文件，然后：
-    - `node <engine-path>/cell.js glossary-add-term --file temp.json`
-  - 这些 `--data` / `--file` 载体只是向引擎提供的一次性输入，本身不被视为“规范源”，真正的源头始终是引擎写入的 `.sdd`。
+- **允许的只是"技术性参数传递"**（一次性给引擎喂数据）：
+  - **Windows/PowerShell 环境下必须优先使用 `--file`**：先用 Write 工具创建临时 JSON 文件，再通过 `--file` 传参。PowerShell 对内嵌 JSON 双引号转义极不可靠，**禁止在 PowerShell 下使用 `--data` 传递包含双引号的 JSON**。
+    - 正确做法：`Write temp.json` → `node <engine-path>/cell.js glossary-add-term --file temp.json` → 用完后 `DeleteFile temp.json`
+  - 仅在 bash/zsh 等支持单引号的 Shell 中，才可使用 `--data`：
+    - `node <engine-path>/cell.js glossary-add-term --data '{"term":"Claim","definition":"...","aliases":["结论"]}'`
+  - 这些 `--data` / `--file` 载体只是向引擎提供的一次性输入，本身不被视为"规范源"，真正的源头始终是引擎写入的 `.sdd`。
 
 ### 常用命令与 JSON 结构速查
 
@@ -52,7 +52,12 @@ engine:
   - `glossary-check`
 - **Cell 管理：**
   - `create --data '<json>'` 或 `--file <json_file>`
-    - 最小结构：`{"id": "kebab-case-id", "kind": "Aggregate|Action|Journey", "intent": "意图描述", "depends_on": ["依赖的id"]}`
+    - 引擎校验要求所有 Cell 必须同时提供 `intent`, `plan`, `contract`(Journey 除外), `test` 四个模块，否则创建失败。
+    - **Aggregate 最小结构**：`{"id": "kebab-case-id", "kind": "Aggregate", "intent": "意图", "plan": "TBD", "contract": [{"when":"TBD","then":"TBD"}], "test": [{"scenario":"TBD","given":"TBD","when":"TBD","then":"TBD"}], "depends_on": []}`
+    - **Action 最小结构**：`{"id": "kebab-case-id", "kind": "Action", "intent": "意图", "plan": "TBD", "contract": [{"when":"TBD","then":"TBD"}], "test": [{"scenario":"TBD","given":"TBD","when":"TBD","then":"TBD"}], "depends_on": [{"id":"依赖id","kind":"call"}]}`
+    - **Journey 最小结构**：`{"id": "kebab-case-id", "kind": "Journey", "intent": "意图", "plan": "TBD", "test": [{"scenario":"TBD","given":"TBD","when":"TBD","then":"TBD"}], "depends_on": [{"id":"依赖id","kind":"call"}]}`
+    - **注意**：Journey Cell 不允许包含 `contract` 模块，创建时不要传入。
+    - PHASE 2 创建时可用 `"TBD"` 占位，PHASE 3 再通过 `update` 逐模块补全。
   - `read <id>`
   - `update <id> --module <mod> --data '<json>'` 或 `--file <json_file>`
     - JSON 结构：直接传入对应模块的数据（如 `schema` 传入数组，`intent` 传入字符串）。
@@ -60,24 +65,35 @@ engine:
 - **变更与传播：**
   - `propagate <id>`
   - `stale`
+  - `dirty`（列出 Dirty Cell 及其模块，用于定位用户在 Web 端的修改）
   - `confirm-module <id> --module <mod> --data '<json>'` 或 `--file <json_file>`
   - `confirm <id>`
 - **图与分析：** `impact <id>`, `deps <id>`, `check`, `roots`, `graph`, `slice`
 
 ### 环境检查与初始化
 
-- 启动前，请检查当前环境是否满足要求（Node.js >= 18.0.0）。
-- 首次使用时，如果发现 `engine/node_modules` 不存在，请主动提示并帮助用户执行 `npm install`。
+> 已编入标准工作流 **PHASE 0**，见下方"阶段 0"小节。
 
-### 可视化面板 (Visualization Server)
+### 可视化面板 (Visualization)
 
-- 在开始工作前，或者当用户需要查看依赖图时，请在后台启动可视化面板：`node <engine-path>/server.js`
-- 启动后，请使用 `cursor-ide-browser` MCP server 的 `browser_navigate` 工具，直接在 IDE 中为用户打开 `http://localhost:3210` 预览页，以便用户直观地查看 Cell-SDD Notebook。
+本项目包含**两个独立服务**，必须同时启动：
+
+| 服务 | 启动方式 | 端口 | 说明 |
+|------|----------|------|------|
+| 后端 API | `node <skill-dir>/engine/server.js`（从用户项目目录启动） | 3210 | 提供 REST API，读取 `.sdd/` 数据 |
+| 前端开发服务器 | `cd <skill-dir>/web && npm run dev` | 5173 | Vite 开发服务器，代理 `/api` → 3210，支持热更新 |
+
+**启动顺序**：先后端，再前端。前端 Vite 已配置 `proxy` 将 `/api` 请求转发到 `localhost:3210`。
+
+**注意**：`engine/server.js` 也可托管 `web/dist` 下的静态文件（生产模式），但开发时必须使用 Vite 开发服务器以获得热更新。
+
+> 已编入标准工作流 **PHASE 0**，见下方"阶段 0"小节。
 
 ## 标准工作流 (Progressive Workflow)
 
-当用户提出新需求或修改现有功能时，严格按照以下 5 个阶段执行，并通过 TODO 列表**线性推进**：
+当用户提出新需求或修改现有功能时，严格按照以下 6 个阶段执行，并通过 TODO 列表**线性推进**：
 
+- `PHASE 0: 环境检查与初始化`
 - `PHASE 1: 需求切分与基线对齐`
 - `PHASE 2: 拓扑与意图确认`
 - `PHASE 3: 契约与测试确认`
@@ -88,9 +104,18 @@ engine:
 
 IDE 已自带 TODO 组件，这里只约定**最小规则**：
 
-- 在会话开始时，创建 5 个顶层 TODO，对应 5 个阶段，并将 `PHASE 1` 设为 `in_progress`，其余为 `pending`。
+- 在会话开始时，创建 6 个顶层 TODO，对应 6 个阶段，并将 `PHASE 0` 设为 `in_progress`，其余为 `pending`。
 - 任一时刻，只有**当前阶段**的 TODO 可以是 `in_progress`；当你认为该阶段完成时，将其标记为 `completed`，再把**下一个阶段**设为 `in_progress`。
-- 不得跳过阶段：只要前一阶段的 TODO 未 `completed`，就不要执行后一阶段才允许的操作（例如在 PHASE 3 之前不要写实现代码，在 PHASE 2 之前不要修改 Contract/Test）。
+- 不得跳过阶段：只要前一阶段的 TODO 未 `completed`，就不要执行后一阶段才允许的操作（例如在 PHASE 3 之前不要写实现代码，在 PHASE 2 之前不要修改 Contract/Test，在 PHASE 0 之前不要执行任何引擎命令）。
+
+### 阶段 0：环境检查与初始化 (Environment Check & Setup)
+
+1. **检查 Node.js 版本**：确认 Node.js >= 18.0.0。如果版本不满足，提示用户升级。
+2. **检查引擎依赖**：确认 `engine/node_modules` 存在。如果不存在，主动执行 `npm install`。
+3. **初始化规范仓库**：在用户项目目录执行 `node <engine-path>/cell.js init`，创建 `.sdd/` 目录结构。
+4. **启动后端 API**：在后台启动 `node <engine-path>/server.js`（注意：必须从用户项目目录启动，以便 server 能找到 `.sdd/`）。启动后确认输出 `Cell-SDD Server running at http://localhost:3210`。
+5. **启动前端开发服务器**：在后台启动 `cd <skill-dir>/web && npm run dev`。启动后确认输出 `Local: http://localhost:5173/`。为用户打开 `http://localhost:5173` 预览页（注意：不是 3210）。
+6. **验证环境**：执行 `node <engine-path>/cell.js list` 确认引擎可用。
 
 ### 阶段 1：需求切分与基线对齐 (Diverge to Converge)
 
@@ -119,9 +144,20 @@ IDE 已自带 TODO 组件，这里只约定**最小规则**：
 
 *（此阶段在模块被 Confirm 时由引擎自动触发）*
 
-1. **自下而上 (倒逼)**：如果 Action Cell 的 `requires_state` 声明了新的状态需求，引擎会自动将底层的 Aggregate Cell 标记为 Stale。你必须主动读取并更新 Aggregate 的 `schema` 或 `states`。
-2. **自上而下 (级联)**：如果 Aggregate Cell 的 `schema` 或 `states` 发生变更，引擎会自动将上层依赖它的 Action/Journey Cell 标记为 Stale。你必须主动推演并更新上层的 `contract` 或 `plan`。
-3. **清零黄灯**：确保图中所有 Stale 节点都被妥善处理并 Confirm。
+1. **Dirty 标记机制**：当用户在 Web 页面编辑并确认模块时，引擎自动为该 Cell 标记 `_dirty`。Dirty 表示"用户已修改，等待 LLM 处理下游影响"。
+2. **自下而上 (倒逼)**：如果 Action Cell 的 `requires_state` 声明了新的状态需求，引擎会自动将底层的 Aggregate Cell 标记为 Stale。你必须主动读取并更新 Aggregate 的 `schema` 或 `states`。
+3. **自上而下 (级联)**：如果 Aggregate Cell 的 `schema` 或 `states` 发生变更，引擎会自动将上层依赖它的 Action/Journey Cell 标记为 Stale。你必须主动推演并更新上层的 `contract` 或 `plan`。
+4. **Dirty 生命周期（引擎自动管理）**：
+   - 用户在 Web 端确认模块 → 引擎标记该 Cell 为 Dirty + 下游为 Stale
+   - LLM 逐个修复 Stale 节点（通过 `confirm-module` 或 `confirm`）
+   - 当该 Dirty Cell 的所有下游 Stale 全部清零 → 引擎自动移除 Dirty 标记
+   - Dirty 未移除期间，Web 页面禁止该 Cell 的编辑操作
+5. **LLM 的工作流**：
+   - 调用 `dirty` 命令查看哪些 Cell 被 Dirty 标记
+   - 调用 `stale` 命令查看哪些 Cell/模块需要修复
+   - 逐个修复 Stale 节点后，引擎自动清除 Dirty
+   - **LLM 不需要手动清除 Dirty 或 Stale，只需修复 Stale 内容并 Confirm**
+6. **清零黄灯**：确保图中所有 Stale 节点都被妥善处理并 Confirm。
 
 ### 阶段 5：TDD 闭环生成 (Implementation)
 
@@ -138,3 +174,5 @@ IDE 已自带 TODO 组件，这里只约定**最小规则**：
 - **ENGINE ONLY**：任何对 Cell / Delta / Glossary 的修改，必须通过 `cell.js` / `server.js` 完成。
 - **NO CODE BEFORE GREEN**：在 `stale` 命令返回空列表，且用户明确 Confirm 契约之前，禁止生成任何业务代码。
 - **GLOSSARY FIRST**：任何 Cell 中出现的新名词，必须先在 Glossary 中定义。
+- **DIRTY 由引擎管理**：LLM 不负责清除 Dirty 或 Stale 标记。LLM 只需修复 Stale 内容并 Confirm，引擎自动管理 Dirty 生命周期。禁止 LLM 手动操作 `_dirty` 或 `_stale` 字段。
+- **DIRTY 期间禁止编辑**：当 Cell 处于 Dirty 状态时，Web 页面已锁定编辑。LLM 应优先处理 Dirty Cell 的下游 Stale，待引擎自动解锁后再进行其他操作。

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ModuleName, ContractItem, TestItem } from '../types';
+import type { ModuleName, ContractItem, LegacyContractItem, TestItem } from '../types';
 import ContractView from './ContractView';
 import TestView from './TestView';
 import JourneyPlanView from './JourneyPlanView';
@@ -10,7 +10,8 @@ interface ModuleCardProps {
   onChange: (module: ModuleName, value: string) => void;
   onConfirm: (module: ModuleName) => Promise<boolean>;
   isBusy?: boolean;
-  structuredData?: ContractItem[] | TestItem[];
+  disabled?: boolean;
+  structuredData?: (ContractItem | LegacyContractItem)[] | TestItem[];
   renderPlanAsMermaid?: boolean;
 }
 
@@ -42,6 +43,7 @@ export default function ModuleCard({
   onChange,
   onConfirm,
   isBusy = false,
+  disabled = false,
   structuredData,
   renderPlanAsMermaid = false,
 }: ModuleCardProps) {
@@ -55,7 +57,7 @@ export default function ModuleCard({
   const placeholder = isTextMode
     ? `Edit ${title} text...`
     : `Edit ${title} in JSON format...`;
-  const canEdit = !isBusy;
+  const canEdit = !isBusy && !disabled;
 
   return (
     <div className="card" style={{ marginBottom: 'var(--space-md)' }}>
@@ -146,7 +148,7 @@ export default function ModuleCard({
           </pre>
         ) : hasStructuredView ? (
           title === 'contract' ? (
-            <ContractView items={structuredData as ContractItem[]} />
+            <ContractView items={structuredData as (ContractItem | LegacyContractItem)[]} />
           ) : (
             <TestView items={structuredData as TestItem[]} />
           )

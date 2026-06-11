@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import type { Cell, ModuleName, ImpactResult, ContractItem, TestItem } from '../types';
+import type { Cell, ModuleName, ImpactResult, ContractItem, TestItem, DirtyCell } from '../types';
 import { ApiError, api } from '../api';
 import ModuleCard from './ModuleCard';
 
@@ -24,7 +24,11 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
   const [busyModule, setBusyModule] = useState<ModuleName | null>(null);
   const [impactResult, setImpactResult] = useState<ImpactResult | null>(null);
   const [blockedReasons, setBlockedReasons] = useState<string[]>([]);
+  const [blockedModule, setBlockedModule] = useState<ModuleName | null>(null);
+  const [blockedData, setBlockedData] = useState<unknown>(null);
+  const [showForceConfirm, setShowForceConfirm] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
+  const [dirtyCells, setDirtyCells] = useState<DirtyCell[]>([]);
 
   const getModulesForKind = (kind?: string | null): ModuleName[] => {
     if (kind === 'Aggregate') return ['intent', 'schema', 'states', 'invariants'];
@@ -82,6 +86,13 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
       });
       setBlockedReasons([]);
       setInfo(null);
+      // Load dirty list
+      try {
+        const dirtyData = await api.listDirty();
+        setDirtyCells(dirtyData.dirty_cells);
+      } catch {
+        setDirtyCells([]);
+      }
     } catch (err) {
       console.error('Failed to load cell:', err);
     } finally {
@@ -108,12 +119,17 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
     setBusyModule(module);
     setInfo(null);
     setBlockedReasons([]);
+    setBlockedModule(null);
+    setBlockedData(null);
     try {
       const result = await api.confirmModule(cell.id, module, parsed.value);
       setImpactResult(result.impact);
       let infoMsg = `模块 ${module} 确认成功，已自动推算影响并传播。`;
       if (result.resonance_marked && result.resonance_marked.length > 0) {
         infoMsg += ` 触发了双向共振，倒逼更新了: ${result.resonance_marked.join(', ')}`;
+      }
+      if (result.forced) {
+        infoMsg = `模块 ${module} 已强制提交，变更已传播到下游。`;
       }
       setInfo(infoMsg);
       await loadCell();
@@ -127,12 +143,42 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
           draft_saved?: boolean;
         };
         setBlockedReasons(payload.reasons || ['该改动被全局评估阻断']);
+        setBlockedModule(module);
+        setBlockedData(parsed.value);
         if (payload.impact) setImpactResult(payload.impact);
-        setInfo(payload.draft_saved ? '改动已被阻断，草稿已保留。' : '改动已被阻断。');
+        setInfo(payload.draft_saved ? '改动已被阻断，草稿已保留。你可以选择强制提交。' : '改动已被阻断。你可以选择强制提交。');
       } else {
         setInfo(err instanceof Error ? err.message : '确认失败');
       }
       return false;
+    } finally {
+      setBusyModule(null);
+    }
+  };
+
+  const handleForceConfirm = async () => {
+    if (!cell || !blockedModule || blockedData === null) return;
+    setShowForceConfirm(false);
+    setBusyModule(blockedModule);
+    setInfo(null);
+    try {
+      const result = await api.confirmModule(cell.id, blockedModule, blockedData, true);
+      setImpactResult(result.impact);
+      let infoMsg = `模块 ${blockedModule} 已强制提交，变更已传播到下游。`;
+      if (result.resonance_marked && result.resonance_marked.length > 0) {
+        infoMsg += ` 触发了双向共振，倒逼更新了: ${result.resonance_marked.join(', ')}`;
+      }
+      if (result.marked_stale && result.marked_stale.length > 0) {
+        infoMsg += ` 以下 Cell 已被标记为 Stale: ${result.marked_stale.join(', ')}`;
+      }
+      setInfo(infoMsg);
+      setBlockedReasons([]);
+      setBlockedModule(null);
+      setBlockedData(null);
+      await loadCell();
+      onCellChanged();
+    } catch (err) {
+      setInfo(err instanceof Error ? err.message : '强制提交失败');
     } finally {
       setBusyModule(null);
     }
@@ -161,6 +207,8 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
     ? Object.entries(cell._stale).filter(([, v]) => v).map(([k]) => k)
     : [];
   const isStale = staleModules.length > 0;
+  const dirtyInfo = dirtyCells.find(dc => dc.cell === cell.id);
+  const isDirty = !!dirtyInfo;
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: 'var(--space-xl)' }}>
@@ -173,6 +221,11 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
           <span className="tag tag-primary">v{cell.version}</span>
           {cell.kind && <span className="tag tag-success">{cell.kind}</span>}
           {cell.entity && <span className="tag tag-info">@{cell.entity}</span>}
+          {isDirty && (
+            <span className="tag" style={{ background: '#ff6b6b20', color: '#e74c3c', border: '1px solid #e74c3c40' }}>
+              DIRTY: {dirtyInfo!.dirty_modules.join(', ')}
+            </span>
+          )}
           {isStale && (
             <>
               <span className="tag tag-warning">STALE: {staleModules.join(', ')}</span>
@@ -202,6 +255,25 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
         )}
       </div>
 
+      {/* Dirty warning bar */}
+      {isDirty && (
+        <div style={{
+          background: '#fff3cd',
+          border: '1px solid #ffc107',
+          borderRadius: 'var(--radius-md)',
+          padding: 'var(--space-sm) var(--space-md)',
+          marginBottom: 'var(--space-md)',
+          fontSize: 'var(--text-sm)',
+          color: '#856404',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-sm)',
+        }}>
+          <span style={{ fontWeight: 'var(--font-bold)' }}>编辑已锁定</span>
+          <span>此 Cell 存在未处理的变更（{dirtyInfo!.dirty_modules.join(', ')}），下游 Stale 全部清除后自动解锁。请前往 Chat 通知 LLM 处理 Stale 节点。</span>
+        </div>
+      )}
+
       {/* Modules */}
       {modules.map((mod) => (
         <ModuleCard
@@ -211,6 +283,7 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
           onChange={handleChange}
           onConfirm={handleConfirmModule}
           isBusy={busyModule !== null}
+          disabled={isDirty}
           structuredData={
             mod === 'contract' ? cell.contract as ContractItem[] :
             mod === 'test' ? cell.test as TestItem[] :
@@ -237,6 +310,14 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
                 {blockedReasons.map((r, i) => (
                   <div key={i} style={{ fontSize: 'var(--text-sm)', color: 'var(--danger)' }}>— {r}</div>
                 ))}
+                <button
+                  onClick={() => setShowForceConfirm(true)}
+                  className="btn btn-sm btn-danger"
+                  style={{ marginTop: 'var(--space-sm)' }}
+                  disabled={busyModule !== null}
+                >
+                  强制提交
+                </button>
               </div>
             )}
             {impactResult && (
@@ -257,6 +338,66 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Force confirm dialog */}
+      {showForceConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+          }}
+          onClick={() => setShowForceConfirm(false)}
+        >
+          <div
+            className="card"
+            style={{ width: 420, zIndex: 2001 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="card-header">
+              <h4 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 'var(--font-bold)', color: 'var(--danger)' }}>
+                确认强制提交？
+              </h4>
+            </div>
+            <div className="card-body">
+              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
+                此操作将绕过全局影响评估，直接提交模块 <strong>{blockedModule}</strong> 的变更。
+                下游 Cell 可能会受到影响并被标记为 Stale。
+              </p>
+              {impactResult && impactResult.affected.length > 0 && (
+                <div style={{ marginBottom: 'var(--space-md)' }}>
+                  <div style={{ fontWeight: 'var(--font-bold)', fontSize: 'var(--text-xs)', color: 'var(--warning)', marginBottom: 'var(--space-xs)', textTransform: 'uppercase' }}>
+                    受影响的 Cell
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
+                    {impactResult.affected.map((id) => (
+                      <span key={id} className="tag tag-warning">{id}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowForceConfirm(false)}
+                  className="btn btn-sm"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleForceConfirm}
+                  className="btn btn-sm btn-danger"
+                >
+                  确认强制提交
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

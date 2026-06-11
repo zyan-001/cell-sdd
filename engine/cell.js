@@ -18,6 +18,8 @@ const {
   saveModuleDraft,
   readModuleDraft,
   clearModuleDraft,
+  markDirty,
+  listDirty,
 } = require('./lib/store');
 const {
   impactAnalysis,
@@ -92,6 +94,8 @@ function parseArgs(argv) {
     } else if (args[i] === '--hops' && i + 1 < args.length) {
       options.hops = parseInt(args[i + 1], 10);
       i++;
+    } else if (args[i] === '--force') {
+      options.force = true;
     } else {
       positional.push(args[i]);
     }
@@ -149,6 +153,7 @@ Delta 管理:
 变更传播:
   propagate <cell-id>            传播变更
   stale                          列出 stale Cell
+  dirty                          列出 dirty 模块（用户在 Web 页面修改后标记）
   confirm <cell-id> [--module <plan|contract|all>]  确认 Cell
   confirm-module <cell-id> --module <intent|plan|contract|test|schema|states|invariants|requires_state> --data '<json>'  确认并提交模块
   draft-read <cell-id> --module <intent|plan|contract|test|schema|states|invariants|requires_state>      读取模块草稿
@@ -335,6 +340,10 @@ Delta 管理:
         output(listStale(rootDir));
         break;
       }
+      case 'dirty': {
+        output(listDirty(rootDir));
+        break;
+      }
       case 'confirm': {
         const id = positional[0];
         if (!id) outputError('缺少 cell-id 参数');
@@ -348,9 +357,10 @@ Delta 管理:
         if (!options.module) outputError('缺少 --module 参数');
         const modData = resolveData(options);
         if (modData === null) outputError('缺少 --data 或 --file 参数');
+        const force = options.force || false;
 
         const evaluation = evaluateGlobalImpact(rootDir, id, options.module, modData);
-        if (evaluation.blocked) {
+        if (evaluation.blocked && !force) {
           const draft = saveModuleDraft(rootDir, id, options.module, modData, {
             blocked: true,
             reasons: evaluation.reasons,
@@ -387,6 +397,7 @@ Delta 管理:
           affected_cell_impacted_modules: evaluation.affected_cell_impacted_modules,
           marked_stale: propagated.marked_stale,
           resonance_marked,
+          forced: evaluation.blocked && force,
         });
         break;
       }

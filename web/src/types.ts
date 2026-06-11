@@ -185,6 +185,12 @@ export interface ImpactResult {
   depth: Record<string, number>;
 }
 
+// Dirty cell
+export interface DirtyCell {
+  cell: string;
+  dirty_modules: string[];
+}
+
 // Stale cell
 export interface StaleCell {
   cell: string;

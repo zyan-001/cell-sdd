@@ -12,6 +12,7 @@ import type {
   SliceResult,
   ImpactResult,
   StaleCell,
+  DirtyCell,
   RootResult,
 } from './types';
 
@@ -57,7 +58,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  confirmModule: (id: string, module: ModuleName, data: unknown) =>
+  confirmModule: (id: string, module: ModuleName, data: unknown, force = false) =>
     request<{
       blocked: boolean;
       reasons?: string[];
@@ -68,9 +69,10 @@ export const api = {
       resonance_marked?: string[];
       draft_saved?: boolean;
       draft_path?: string;
+      forced?: boolean;
     }>(`/cells/${id}/confirm-module`, {
       method: 'POST',
-      body: JSON.stringify({ module, data }),
+      body: JSON.stringify({ module, data, force, source: 'web' }),
     }),
 
   readModuleDraft: (id: string, module: ModuleName) =>
@@ -123,6 +125,10 @@ export const api = {
   // Stale
   listStale: () =>
     request<{ stale_cells: StaleCell[] }>('/stale'),
+
+  // Dirty
+  listDirty: () =>
+    request<{ dirty_cells: DirtyCell[] }>('/dirty'),
 
   confirmCell: (id: string, module = 'all') =>
     request<{ confirmed: string; cleared: string[] }>(`/cells/${id}/confirm?module=${module}`, {
