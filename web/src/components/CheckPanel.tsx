@@ -33,7 +33,7 @@ export default function CheckPanel() {
         disabled={loading}
         className={hasIssues ? 'btn btn-danger' : 'btn'}
       >
-        {loading ? 'Checking...' : 'Check'}
+        {loading ? '检查中...' : '一致性检查'}
       </button>
 
       {result && (
@@ -53,12 +53,12 @@ export default function CheckPanel() {
         >
           <div className="card-header" style={{ position: 'sticky', top: 0, zIndex: 1 }}>
             <h4 style={{ margin: 0, fontSize: 'var(--text-sm)', fontWeight: 'var(--font-bold)' }}>
-              Consistency Check
+              一致性检查结果
               {hasIssues && (
-                <span className="tag tag-danger" style={{ marginLeft: 'var(--space-sm)' }}>Issues Found</span>
+                <span className="tag tag-danger" style={{ marginLeft: 'var(--space-sm)' }}>存在阻断项</span>
               )}
               {!hasIssues && (
-                <span className="tag tag-success" style={{ marginLeft: 'var(--space-sm)' }}>All Clear</span>
+                <span className="tag tag-success" style={{ marginLeft: 'var(--space-sm)' }}>已通过</span>
               )}
             </h4>
             <button
@@ -70,11 +70,11 @@ export default function CheckPanel() {
             </button>
           </div>
           <div className="card-body">
-            <CheckSection title="Dangling References" items={result.dangling_refs} />
-            <CheckSection title="Cycles" items={result.cycles} />
-            <CheckSection title="Gaps" items={result.gaps} />
-            <CheckSection title="Glossary Conflicts" items={result.glossary_conflicts} />
-            <CheckSection title="Glossary Missing Refs" items={result.glossary_missing_refs} />
+            <CheckSection title="悬挂引用（Dangling References）" items={result.dangling_refs} />
+            <CheckSection title="循环依赖（Cycles）" items={result.cycles} />
+            <CheckSection title="模块缺口（Gaps）" items={result.gaps} />
+            <CheckSection title="术语冲突（Glossary Conflicts）" items={result.glossary_conflicts} />
+            <CheckSection title="术语缺失引用（Glossary Missing Refs）" items={result.glossary_missing_refs} />
           </div>
         </div>
       )}

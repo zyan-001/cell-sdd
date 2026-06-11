@@ -8,11 +8,13 @@ import {
   useEdgesState,
   type Node,
   type Edge,
+  type ReactFlowInstance,
   MarkerType,
   Handle,
   Position,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import dagre from 'dagre';
 import { api } from '../api';
 import type { GraphData } from '../types';
 
@@ -96,11 +98,47 @@ function CellNode({ data }: { data: CellNodeData }) {
 }
 
 const nodeTypes = { cellNode: CellNode };
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 84;
+
+function layoutNodes(nodes: Node[], edges: Edge[]): Node[] {
+  if (nodes.length === 0) return nodes;
+  const graph = new dagre.graphlib.Graph();
+  graph.setDefaultEdgeLabel(() => ({}));
+  graph.setGraph({
+    rankdir: 'TB',
+    ranksep: 72,
+    nodesep: 36,
+    marginx: 24,
+    marginy: 24,
+  });
+
+  nodes.forEach((node) => {
+    graph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  });
+  edges.forEach((edge) => {
+    graph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(graph);
+
+  return nodes.map((node) => {
+    const pos = graph.node(node.id);
+    return {
+      ...node,
+      position: {
+        x: pos.x - NODE_WIDTH / 2,
+        y: pos.y - NODE_HEIGHT / 2,
+      },
+    };
+  });
+}
 
 export default function DependencyGraph({ selectedCellId, onSelectCell, refreshKey }: DependencyGraphProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loading, setLoading] = useState(true);
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<Node, Edge> | null>(null);
   const initialFitDone = useRef(false);
 
   // Load graph data — only on mount or when refreshKey changes
@@ -151,7 +189,7 @@ export default function DependencyGraph({ selectedCellId, onSelectCell, refreshK
           labelBgBorderRadius: 3,
         };
       });
-      setNodes(reactNodes);
+      setNodes(layoutNodes(reactNodes, reactEdges));
       setEdges(reactEdges);
       initialFitDone.current = fitOnLoad;
     } catch (err) {
@@ -190,6 +228,13 @@ export default function DependencyGraph({ selectedCellId, onSelectCell, refreshK
     [onSelectCell]
   );
 
+  const handleAutoLayout = useCallback(() => {
+    setNodes((currentNodes) => layoutNodes(currentNodes, edges));
+    setTimeout(() => {
+      flowInstance?.fitView({ padding: 0.3 });
+    }, 0);
+  }, [edges, flowInstance, setNodes]);
+
   if (loading) {
     return <div style={{ padding: 20, color: '#999' }}>Loading graph...</div>;
   }
@@ -203,7 +248,20 @@ export default function DependencyGraph({ selectedCellId, onSelectCell, refreshK
   }
 
   return (
-    <div style={{ width: '100%', height: '100%' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <button
+        onClick={handleAutoLayout}
+        className="btn btn-sm"
+        style={{
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          zIndex: 5,
+          background: 'var(--surface)',
+        }}
+      >
+        Auto Layout
+      </button>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -214,6 +272,7 @@ export default function DependencyGraph({ selectedCellId, onSelectCell, refreshK
         fitView={initialFitDone.current}
         fitViewOptions={{ padding: 0.3 }}
         proOptions={{ hideAttribution: true }}
+        onInit={setFlowInstance}
       >
         <Background color="#e0e0e0" gap={20} />
         <Controls showInteractive={false} />

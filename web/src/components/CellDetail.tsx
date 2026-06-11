@@ -15,6 +15,10 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
     plan: '',
     contract: '',
     test: '',
+    schema: '',
+    states: '',
+    invariants: '',
+    requires_state: '',
   });
   const [loading, setLoading] = useState(false);
   const [busyModule, setBusyModule] = useState<ModuleName | null>(null);
@@ -22,7 +26,14 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
   const [blockedReasons, setBlockedReasons] = useState<string[]>([]);
   const [info, setInfo] = useState<string | null>(null);
 
-  const modules: ModuleName[] = ['intent', 'plan', 'contract', 'test'];
+  const getModulesForKind = (kind?: string | null): ModuleName[] => {
+    if (kind === 'Aggregate') return ['intent', 'schema', 'states', 'invariants'];
+    if (kind === 'Action') return ['intent', 'plan', 'contract', 'test'];
+    if (kind === 'Journey') return ['intent', 'plan', 'test'];
+    return ['intent', 'plan', 'contract', 'test'];
+  };
+
+  const modules = cell ? getModulesForKind(cell.kind) : [];
 
   const toDraftText = (mod: ModuleName, value: Cell[ModuleName]): string => {
     if (mod === 'intent' || mod === 'plan') {
@@ -64,6 +75,10 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
         plan: toDraftText('plan', cellData.plan),
         contract: toDraftText('contract', cellData.contract),
         test: toDraftText('test', cellData.test),
+        schema: toDraftText('schema', cellData.schema),
+        states: toDraftText('states', cellData.states),
+        invariants: toDraftText('invariants', cellData.invariants),
+        requires_state: toDraftText('requires_state', cellData.requires_state),
       });
       setBlockedReasons([]);
       setInfo(null);
@@ -82,30 +97,12 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
     setModuleDrafts((prev) => ({ ...prev, [module]: value }));
   };
 
-  const handleRestoreDraft = async (module: ModuleName) => {
-    if (!cell) return;
-    try {
-      const result = await api.readModuleDraft(cell.id, module);
-      if (result.draft && result.draft.data !== undefined) {
-        const value = module === 'intent' || module === 'plan'
-          ? String(result.draft.data)
-          : JSON.stringify(result.draft.data, null, 2);
-        setModuleDrafts((prev) => ({ ...prev, [module]: value }));
-        setInfo(`已恢复 ${module} 草稿`);
-      } else {
-        setInfo(`${module} 暂无草稿`);
-      }
-    } catch (err) {
-      console.error('Failed to restore draft:', err);
-    }
-  };
-
-  const handleConfirmModule = async (module: ModuleName) => {
-    if (!cell) return;
+  const handleConfirmModule = async (module: ModuleName): Promise<boolean> => {
+    if (!cell) return false;
     const parsed = parseDraft(module, moduleDrafts[module]);
     if (!parsed.ok) {
       setInfo(parsed.error);
-      return;
+      return false;
     }
 
     setBusyModule(module);
@@ -114,9 +111,14 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
     try {
       const result = await api.confirmModule(cell.id, module, parsed.value);
       setImpactResult(result.impact);
-      setInfo(`模块 ${module} 确认成功，已自动推算影响并传播。`);
+      let infoMsg = `模块 ${module} 确认成功，已自动推算影响并传播。`;
+      if (result.resonance_marked && result.resonance_marked.length > 0) {
+        infoMsg += ` 触发了双向共振，倒逼更新了: ${result.resonance_marked.join(', ')}`;
+      }
+      setInfo(infoMsg);
       await loadCell();
       onCellChanged();
+      return true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && typeof err.payload === 'object' && err.payload) {
         const payload = err.payload as {
@@ -130,6 +132,7 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
       } else {
         setInfo(err instanceof Error ? err.message : '确认失败');
       }
+      return false;
     } finally {
       setBusyModule(null);
     }
@@ -207,13 +210,13 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
           value={moduleDrafts[mod]}
           onChange={handleChange}
           onConfirm={handleConfirmModule}
-          onRestoreDraft={handleRestoreDraft}
           isBusy={busyModule !== null}
           structuredData={
             mod === 'contract' ? cell.contract as ContractItem[] :
             mod === 'test' ? cell.test as TestItem[] :
             undefined
           }
+          renderPlanAsMermaid={mod === 'plan' && cell.kind === 'Journey'}
         />
       ))}
 

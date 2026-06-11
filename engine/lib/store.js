@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
-const { validateCell, validateDelta, validateModule } = require('./validate');
+const { validateCell, validateDelta, validateModule, validateModuleForKind } = require('./validate');
 
 const SDD_DIR = '.sdd';
 const CELLS_DIR = 'cells';
@@ -71,7 +71,7 @@ function initProject(rootDir) {
   // 创建空 glossary.yaml
   const glossaryPath = path.join(sddDir, 'glossary.yaml');
   if (!fs.existsSync(glossaryPath)) {
-    writeYaml(glossaryPath, { version: 0, entities: {} });
+    writeYaml(glossaryPath, { version: 0, terms: {} });
   }
   return { initialized: true, path: SDD_DIR };
 }
@@ -128,15 +128,29 @@ function createCell(rootDir, data) {
     id: data.id,
     version: 1,
     intent: data.intent,
-    plan: data.plan,
-    contract: data.contract,
-    test: data.test,
+    kind: data.kind,
     depends_on: data.depends_on || [],
-    _stale: { plan: false, contract: false },
+    _stale: {},
   };
 
+  if (data.kind === 'Aggregate') {
+    if (data.schema) cellData.schema = data.schema;
+    if (data.states) cellData.states = data.states;
+    if (data.invariants) cellData.invariants = data.invariants;
+    cellData._stale = { schema: false, states: false, invariants: false };
+  } else if (data.kind === 'Action') {
+    cellData.plan = data.plan;
+    cellData.contract = data.contract;
+    cellData.test = data.test;
+    if (data.requires_state) cellData.requires_state = data.requires_state;
+    cellData._stale = { plan: false, contract: false, test: false, requires_state: false };
+  } else if (data.kind === 'Journey') {
+    cellData.plan = data.plan;
+    cellData.test = data.test;
+    cellData._stale = { plan: false, test: false };
+  }
+
   // 可选字段
-  if (data.kind !== undefined) cellData.kind = data.kind;
   if (data.tags !== undefined) cellData.tags = data.tags;
   if (data.entity !== undefined) cellData.entity = data.entity;
 
@@ -159,6 +173,10 @@ function updateCell(rootDir, id, module, data) {
   }
 
   const cell = readCell(rootDir, id);
+  const kindValidation = validateModuleForKind(cell.kind, module);
+  if (!kindValidation.valid) {
+    throw new Error(`校验失败: ${kindValidation.errors.join('; ')}`);
+  }
   cell[module] = data;
   writeYaml(cellFilePath(rootDir, id), cell);
   return { updated: id, module };
@@ -222,6 +240,10 @@ function createDelta(rootDir, data) {
     plan: data.plan,
     contract: data.contract,
     test: data.test,
+    schema: data.schema,
+    states: data.states,
+    invariants: data.invariants,
+    requires_state: data.requires_state,
     depends_on: data.depends_on || [],
   };
 

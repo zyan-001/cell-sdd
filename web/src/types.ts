@@ -3,13 +3,32 @@ export interface Cell {
   version: number;
   entity?: string | null;
   intent: string;
-  plan: string;
-  contract: ContractItem[];
-  test: TestItem[];
+  plan?: string;
+  contract?: ContractItem[];
+  test?: TestItem[];
+  schema?: SchemaField[];
+  states?: StateItem[];
+  invariants?: string[];
+  requires_state?: RequiresStateItem[];
   depends_on: Dependency[];
   kind?: string | null;
   tags?: string[] | null;
   _stale?: Record<string, boolean>;
+}
+
+export interface SchemaField {
+  name: string;
+  type: string;
+}
+
+export interface StateItem {
+  name: string;
+}
+
+export interface RequiresStateItem {
+  target: string;
+  field: string;
+  type: 'schema' | 'state';
 }
 
 export interface LegacyContractItem {
@@ -99,48 +118,21 @@ export interface MergePreview {
   merged: Cell;
 }
 
-export type ModuleName = 'intent' | 'plan' | 'contract' | 'test';
+export type ModuleName = 'intent' | 'plan' | 'contract' | 'test' | 'schema' | 'states' | 'invariants' | 'requires_state';
 
 // Glossary types
-export interface GlossaryEntityAttribute {
-  name: string;
-  type: string;
-  description: string;
-}
-
-export interface GlossaryEntityState {
-  name: string;
-  description: string;
-}
-
-export interface GlossaryEntityTransition {
-  from: string;
-  to: string;
-  trigger: string;
-}
-
-export interface GlossaryEntityRelation {
-  target: string;
-  kind: string;
-  description: string;
-}
-
-export interface GlossaryEntity {
-  name: string;
-  attributes: GlossaryEntityAttribute[];
-  capabilities: string[];
-  states?: GlossaryEntityState[];
-  transitions?: GlossaryEntityTransition[];
-  relations?: GlossaryEntityRelation[];
+export interface GlossaryTerm {
+  definition: string;
+  aliases?: string[];
 }
 
 export interface Glossary {
   version: number;
-  entities: Record<string, GlossaryEntity>;
+  terms: Record<string, GlossaryTerm>;
 }
 
 export interface GlossaryImpactResult {
-  entities: string[];
+  terms: string[];
   affected_cells: string[];
 }
 

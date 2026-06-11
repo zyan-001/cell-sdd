@@ -65,6 +65,7 @@ export const api = {
       current_cell_impacted_modules: string[];
       affected_cell_impacted_modules: string[];
       marked_stale?: string[];
+      resonance_marked?: string[];
       draft_saved?: boolean;
       draft_path?: string;
     }>(`/cells/${id}/confirm-module`, {
@@ -138,8 +139,8 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  addEntity: (data: Record<string, unknown>) =>
-    request<{ added: string; version: number }>('/glossary/entities', {
+  addTerm: (data: Record<string, unknown>) =>
+    request<{ added: string; version: number }>('/glossary/terms', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -147,10 +148,10 @@ export const api = {
   checkGlossary: () =>
     request<{ conflicts: unknown[]; missing_refs: unknown[] }>('/glossary/check'),
 
-  glossaryImpact: (entities: string[]) =>
+  glossaryImpact: (terms: string[]) =>
     request<GlossaryImpactResult>('/glossary/impact', {
       method: 'POST',
-      body: JSON.stringify({ entities }),
+      body: JSON.stringify({ terms }),
     }),
 
   // Graph operations

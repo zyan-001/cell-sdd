@@ -122,17 +122,28 @@ function applyMerge(target, delta) {
     kind: target.kind,
     tags: target.tags,
     intent: target.intent + '\n---\n' + delta.intent,
-    plan: target.plan + '\n---\n' + delta.plan,
+    plan: (target.plan || '') + (delta.plan ? '\n---\n' + delta.plan : ''),
     contract: [...(target.contract || []), ...(delta.contract || [])],
     test: [...(target.test || []), ...(delta.test || [])],
+    schema: [...(target.schema || []), ...(delta.schema || [])],
+    states: [...(target.states || []), ...(delta.states || [])],
+    invariants: [...(target.invariants || []), ...(delta.invariants || [])],
+    requires_state: [...(target.requires_state || []), ...(delta.requires_state || [])],
     depends_on: mergeDependsOn(target.depends_on || [], delta.depends_on || []),
-    _stale: target._stale || { plan: false, contract: false },
+    _stale: target._stale || {},
   };
 
   // 清除 undefined 的可选字段
   if (merged.entity === undefined) delete merged.entity;
   if (merged.kind === undefined) delete merged.kind;
   if (merged.tags === undefined) delete merged.tags;
+  if (merged.plan === '') delete merged.plan;
+  if (merged.contract.length === 0) delete merged.contract;
+  if (merged.test.length === 0) delete merged.test;
+  if (merged.schema.length === 0) delete merged.schema;
+  if (merged.states.length === 0) delete merged.states;
+  if (merged.invariants.length === 0) delete merged.invariants;
+  if (merged.requires_state.length === 0) delete merged.requires_state;
 
   return merged;
 }

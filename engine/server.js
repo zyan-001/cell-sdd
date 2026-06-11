@@ -31,6 +31,7 @@ const {
   evaluateGlobalImpact,
   slice,
   buildGraph,
+  triggerResonance,
 } = require('./lib/graph');
 const {
   previewMerge,
@@ -40,9 +41,9 @@ const {
 const {
   readGlossary,
   updateGlossary,
-  addEntity,
+  addTerm,
   checkConsistency: glossaryCheck,
-  impactByEntities,
+  impactByTerms,
 } = require('./lib/glossary');
 const {
   saveModuleDraft,
@@ -54,10 +55,10 @@ const app = express();
 const PORT = process.env.PORT || 3210;
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '10mb', strict: false }));
 
 // 前端静态文件（构建后）
-const webDistPath = path.resolve(__dirname, '../../web/dist');
+const webDistPath = path.resolve(__dirname, '../web/dist');
 app.use('/assets', express.static(path.join(webDistPath, 'assets')));
 app.get('/', (req, res) => {
   res.sendFile(path.join(webDistPath, 'index.html'));
@@ -100,9 +101,9 @@ app.put('/api/glossary', getRootDir, (req, res) => {
   }
 });
 
-app.post('/api/glossary/entities', getRootDir, (req, res) => {
+app.post('/api/glossary/terms', getRootDir, (req, res) => {
   try {
-    res.json(addEntity(req.rootDir, req.body));
+    res.json(addTerm(req.rootDir, req.body));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -118,8 +119,8 @@ app.get('/api/glossary/check', getRootDir, (req, res) => {
 
 app.post('/api/glossary/impact', getRootDir, (req, res) => {
   try {
-    const entities = Array.isArray(req.body?.entities) ? req.body.entities : [];
-    res.json(impactByEntities(req.rootDir, entities));
+    const terms = Array.isArray(req.body?.terms) ? req.body.terms : [];
+    res.json(impactByTerms(req.rootDir, terms));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -153,7 +154,7 @@ app.post('/api/cells', getRootDir, (req, res) => {
 app.put('/api/cells/:id/:module', getRootDir, (req, res) => {
   try {
     const { id, module } = req.params;
-    if (!['intent', 'plan', 'contract', 'test', 'depends_on'].includes(module)) {
+    if (!['intent', 'plan', 'contract', 'test', 'depends_on', 'schema', 'states', 'invariants', 'requires_state'].includes(module)) {
       return res.status(400).json({ error: `无效模块: ${module}` });
     }
     res.json(updateCell(req.rootDir, id, module, req.body));
@@ -166,7 +167,8 @@ app.post('/api/cells/:id/confirm-module', getRootDir, (req, res) => {
   try {
     const { id } = req.params;
     const { module, data } = req.body || {};
-    if (!['intent', 'plan', 'contract', 'test'].includes(module)) {
+    const validModules = ['intent', 'plan', 'contract', 'test', 'schema', 'states', 'invariants', 'requires_state'];
+    if (!validModules.includes(module)) {
       return res.status(400).json({ error: `无效模块: ${module}` });
     }
 
@@ -190,7 +192,14 @@ app.post('/api/cells/:id/confirm-module', getRootDir, (req, res) => {
 
     const updated = updateCell(req.rootDir, id, module, data);
     clearModuleDraft(req.rootDir, id, module);
+    confirmCell(req.rootDir, id, module);
     const propagated = propagateChange(req.rootDir, id);
+    
+    let resonance_marked = [];
+    if (module === 'requires_state') {
+      resonance_marked = triggerResonance(req.rootDir, id, data);
+    }
+
     return res.json({
       blocked: false,
       updated,
@@ -198,6 +207,7 @@ app.post('/api/cells/:id/confirm-module', getRootDir, (req, res) => {
       current_cell_impacted_modules: evalResult.current_cell_impacted_modules,
       affected_cell_impacted_modules: evalResult.affected_cell_impacted_modules,
       marked_stale: propagated.marked_stale,
+      resonance_marked,
     });
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -216,8 +226,8 @@ app.get('/api/cells/:id/drafts/:module', getRootDir, (req, res) => {
 
 app.delete('/api/cells/:id', getRootDir, (req, res) => {
   try {
-    const result = deleteCell(req.rootDir, req.params.id);
     const deps = getDependents(req.rootDir, req.params.id);
+    const result = deleteCell(req.rootDir, req.params.id);
     result.dependents = deps.dependents;
     res.json(result);
   } catch (err) {
@@ -253,7 +263,7 @@ app.post('/api/deltas', getRootDir, (req, res) => {
 app.put('/api/deltas/:id/:module', getRootDir, (req, res) => {
   try {
     const { id, module } = req.params;
-    if (!['intent', 'plan', 'contract', 'test', 'depends_on'].includes(module)) {
+    if (!['intent', 'plan', 'contract', 'test', 'depends_on', 'schema', 'states', 'invariants', 'requires_state'].includes(module)) {
       return res.status(400).json({ error: `无效模块: ${module}` });
     }
     res.json(updateDelta(req.rootDir, id, module, req.body));

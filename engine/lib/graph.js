@@ -134,8 +134,21 @@ function consistencyCheck(rootDir) {
   const gaps = [];
   for (const [id, cell] of cells) {
     const missing = [];
-    if (!cell.test || cell.test.length === 0) missing.push('test');
-    if (!cell.contract || cell.contract.length === 0) missing.push('contract');
+    if (cell.kind === 'Action') {
+      if (!cell.plan || cell.plan.length === 0) missing.push('plan');
+      if (!cell.test || cell.test.length === 0) missing.push('test');
+      if (!cell.contract || cell.contract.length === 0) missing.push('contract');
+    } else if (cell.kind === 'Journey') {
+      if (!cell.plan || cell.plan.length === 0) missing.push('plan');
+      if (!cell.test || cell.test.length === 0) missing.push('test');
+    } else if (cell.kind === 'Aggregate') {
+      if (!cell.schema || cell.schema.length === 0) missing.push('schema');
+      if (!cell.states || cell.states.length === 0) missing.push('states');
+      if (!cell.invariants || cell.invariants.length === 0) missing.push('invariants');
+    } else {
+      if (!cell.test || cell.test.length === 0) missing.push('test');
+      if (!cell.contract || cell.contract.length === 0) missing.push('contract');
+    }
     if (missing.length > 0) {
       gaps.push({ cell: id, missing });
     }
@@ -184,6 +197,44 @@ function generateMermaid(rootDir) {
   return { mermaid: lines.join('\n') };
 }
 
+function triggerResonance(rootDir, cellId, requiresStateData) {
+  const { cells } = buildGraph(rootDir);
+  const markedStale = [];
+
+  if (!Array.isArray(requiresStateData)) return markedStale;
+
+  for (const req of requiresStateData) {
+    const targetId = req.target;
+    if (!cells.has(targetId)) continue;
+    
+    const targetCell = cells.get(targetId);
+    if (targetCell.kind !== 'Aggregate') continue;
+
+    let isMissing = true;
+    if (req.type === 'schema') {
+      if (Array.isArray(targetCell.schema)) {
+        isMissing = !targetCell.schema.some(s => s.name === req.field);
+      }
+    } else if (req.type === 'state') {
+      if (Array.isArray(targetCell.states)) {
+        isMissing = !targetCell.states.some(s => s.name === req.field);
+      }
+    }
+
+    if (isMissing) {
+      const filePath = cellFilePath(rootDir, targetId);
+      const cell = readYaml(filePath);
+      cell._stale = cell._stale || {};
+      if (req.type === 'schema') cell._stale.schema = true;
+      if (req.type === 'state') cell._stale.states = true;
+      writeYaml(filePath, cell);
+      markedStale.push(targetId);
+    }
+  }
+
+  return markedStale;
+}
+
 function propagateChange(rootDir, cellId) {
   const { affected } = impactAnalysis(rootDir, cellId);
 
@@ -191,7 +242,22 @@ function propagateChange(rootDir, cellId) {
   for (const id of affected) {
     const filePath = cellFilePath(rootDir, id);
     const cell = readYaml(filePath);
-    cell._stale = { plan: true, contract: true };
+    cell._stale = cell._stale || {};
+    
+    if (cell.kind === 'Action') {
+      cell._stale.plan = true;
+      cell._stale.contract = true;
+    } else if (cell.kind === 'Journey') {
+      cell._stale.plan = true;
+    } else if (cell.kind === 'Aggregate') {
+      cell._stale.schema = true;
+      cell._stale.states = true;
+      cell._stale.invariants = true;
+    } else {
+      cell._stale.plan = true;
+      cell._stale.contract = true;
+    }
+    
     writeYaml(filePath, cell);
     markedStale.push(id);
   }
@@ -246,7 +312,23 @@ function confirmCell(rootDir, cellId, module = 'all') {
   return { confirmed: cellId, cleared };
 }
 
-function impactedModulesForCurrent(module) {
+function impactedModulesForCurrent(module, kind) {
+  if (kind === 'Aggregate') {
+    if (module === 'schema') return ['states', 'invariants'];
+    if (module === 'states') return ['invariants'];
+    return [];
+  } else if (kind === 'Action') {
+    if (module === 'intent') return ['plan', 'contract', 'test', 'requires_state'];
+    if (module === 'plan') return ['contract', 'test'];
+    if (module === 'contract') return ['test'];
+    if (module === 'requires_state') return ['plan', 'contract'];
+    return [];
+  } else if (kind === 'Journey') {
+    if (module === 'intent') return ['plan', 'test'];
+    if (module === 'plan') return ['test'];
+    return [];
+  }
+  
   if (module === 'intent') return ['plan', 'contract', 'test'];
   if (module === 'plan') return ['contract', 'test'];
   if (module === 'contract') return ['test'];
@@ -254,18 +336,20 @@ function impactedModulesForCurrent(module) {
 }
 
 function evaluateGlobalImpact(rootDir, cellId, module, nextData) {
+  const { cells } = buildGraph(rootDir);
+  const cell = cells.get(cellId) || {};
   const impact = impactAnalysis(rootDir, cellId);
   const reasons = [];
 
-  if (impact.affected.length > 0 && module === 'intent') {
-    reasons.push('intent 语义变化会影响下游 Cell 的目标边界');
+  if (impact.affected.length > 0) {
+    if (module === 'intent') reasons.push('intent 语义变化会影响下游 Cell 的目标边界');
+    if (module === 'plan') reasons.push('plan 设计变化可能影响共享约束与下游实现假设');
+    if (module === 'contract') reasons.push('contract 接口契约变化会影响下游 Cell 集成');
+    if (module === 'schema') reasons.push('schema 结构变化会影响下游 Cell 的数据依赖');
+    if (module === 'states') reasons.push('states 状态机变化会影响下游 Cell 的流转逻辑');
+    if (module === 'invariants') reasons.push('invariants 变化可能影响下游 Cell 的业务规则假设');
   }
-  if (impact.affected.length > 0 && module === 'plan') {
-    reasons.push('plan 设计变化可能影响共享约束与下游实现假设');
-  }
-  if (impact.affected.length > 0 && module === 'contract') {
-    reasons.push('contract 接口契约变化会影响下游 Cell 集成');
-  }
+
   if (module === 'contract' && Array.isArray(nextData) && nextData.length === 0) {
     reasons.push('contract 不能为空，无法确认');
   }
@@ -274,7 +358,7 @@ function evaluateGlobalImpact(rootDir, cellId, module, nextData) {
     blocked: reasons.length > 0,
     reasons,
     impact,
-    current_cell_impacted_modules: impactedModulesForCurrent(module),
+    current_cell_impacted_modules: impactedModulesForCurrent(module, cell.kind),
     affected_cell_impacted_modules: ['plan', 'contract', 'test'],
   };
 }
@@ -376,4 +460,5 @@ module.exports = {
   confirmCell,
   evaluateGlobalImpact,
   slice,
+  triggerResonance,
 };

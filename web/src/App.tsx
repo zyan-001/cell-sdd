@@ -26,10 +26,10 @@ function App() {
             onClick={() => setShowGlossary(!showGlossary)}
             className={showGlossary ? 'btn btn-primary' : 'btn'}
           >
-            Glossary
+            术语库（Glossary）
           </button>
           <CheckPanel />
-          <span className="header-hint">Click a cell to edit modules and confirm changes</span>
+          <span className="header-hint">选择一个 Cell，按模块编辑并确认变更</span>
         </div>
       </header>
       <main className="app-main">

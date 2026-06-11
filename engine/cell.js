@@ -40,9 +40,9 @@ const {
 const {
   readGlossary,
   updateGlossary,
-  addEntity,
+  addTerm,
   checkConsistency,
-  impactByEntities,
+  impactByTerms,
 } = require('./lib/glossary');
 
 function output(data) {
@@ -115,9 +115,9 @@ Cell-Based SDD 引擎
 全局基线管理:
   glossary-read                  读取全局基线
   glossary-update --data '<json>' 更新全局基线（全量替换）
-  glossary-add-entity --data '<json>' 添加实体
+  glossary-add-term --data '<json>' 添加术语
   glossary-check                  检查 Cell 与基线的一致性
-  glossary-impact --data '{"entities":["user","session"]}' 计算实体变更影响范围
+  glossary-impact --data '{"terms":["user","session"]}' 计算术语变更影响范围
 
 Cell CRUD:
   create --data '<json>'         创建 Cell
@@ -150,8 +150,8 @@ Delta 管理:
   propagate <cell-id>            传播变更
   stale                          列出 stale Cell
   confirm <cell-id> [--module <plan|contract|all>]  确认 Cell
-  confirm-module <cell-id> --module <intent|plan|contract|test> --data '<json>'  确认并提交模块
-  draft-read <cell-id> --module <intent|plan|contract|test>      读取模块草稿
+  confirm-module <cell-id> --module <intent|plan|contract|test|schema|states|invariants|requires_state> --data '<json>'  确认并提交模块
+  draft-read <cell-id> --module <intent|plan|contract|test|schema|states|invariants|requires_state>      读取模块草稿
 `);
     process.exit(0);
   }
@@ -182,10 +182,10 @@ Delta 管理:
         output(updateGlossary(rootDir, data));
         break;
       }
-      case 'glossary-add-entity': {
+      case 'glossary-add-term': {
         const data = resolveData(options);
         if (!data) outputError('缺少 --data 或 --file 参数');
-        output(addEntity(rootDir, data));
+        output(addTerm(rootDir, data));
         break;
       }
       case 'glossary-check': {
@@ -194,10 +194,10 @@ Delta 管理:
       }
       case 'glossary-impact': {
         const data = resolveData(options);
-        if (!data || !Array.isArray(data.entities)) {
-          outputError('缺少 --data 或 --file 参数，且必须包含 entities 数组');
+        if (!data || !Array.isArray(data.terms)) {
+          outputError('缺少 --data 或 --file 参数，且必须包含 terms 数组');
         }
-        output(impactByEntities(rootDir, data.entities));
+        output(impactByTerms(rootDir, data.terms));
         break;
       }
 
@@ -370,7 +370,15 @@ Delta 管理:
 
         const updated = updateCell(rootDir, id, options.module, modData);
         clearModuleDraft(rootDir, id, options.module);
+        confirmCell(rootDir, id, options.module);
         const propagated = propagateChange(rootDir, id);
+        
+        let resonance_marked = [];
+        if (options.module === 'requires_state') {
+          const { triggerResonance } = require('./lib/graph');
+          resonance_marked = triggerResonance(rootDir, id, modData);
+        }
+
         output({
           blocked: false,
           updated,
@@ -378,6 +386,7 @@ Delta 管理:
           current_cell_impacted_modules: evaluation.current_cell_impacted_modules,
           affected_cell_impacted_modules: evaluation.affected_cell_impacted_modules,
           marked_stale: propagated.marked_stale,
+          resonance_marked,
         });
         break;
       }

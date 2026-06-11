@@ -42,6 +42,14 @@ function moduleToString(module: ModuleName, cell: Cell): string {
       return (cell.test || [])
         .map((t: TestItem) => `SCENARIO: ${t.scenario}\nGIVEN: ${t.given}\nWHEN: ${t.when}\nTHEN: ${t.then}`)
         .join('\n\n');
+    case 'schema':
+      return JSON.stringify(cell.schema || [], null, 2);
+    case 'states':
+      return JSON.stringify(cell.states || [], null, 2);
+    case 'invariants':
+      return JSON.stringify(cell.invariants || [], null, 2);
+    case 'requires_state':
+      return '';
   }
 }
 
@@ -52,7 +60,7 @@ function dependsOnToString(deps: Dependency[]): string {
   }).join('\n');
 }
 
-const MODULES: ModuleName[] = ['intent', 'plan', 'contract', 'test'];
+const MODULES: ModuleName[] = ['intent', 'plan', 'contract', 'test', 'schema', 'states', 'invariants'];
 
 export default function DiffView({ current, merged, onAdopt, onReject, deltaId }: DiffViewProps) {
   return (

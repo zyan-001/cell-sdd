@@ -13,6 +13,10 @@ const MODULE_HINTS: Record<ModuleName, string> = {
   plan: 'Describe how you want to adjust the design approach...',
   contract: 'Describe the new contract conditions (when/then)...',
   test: 'Describe the new test scenarios to add...',
+  schema: 'Describe the new schema fields...',
+  states: 'Describe the new states...',
+  invariants: 'Describe the new invariants...',
+  requires_state: 'Describe the new state requirements...',
 };
 
 export default function PromptDialog({ module, cellId, onSubmit, onClose }: PromptDialogProps) {

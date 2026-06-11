@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getSddDir, readYaml, writeYaml, getCellsDir } = require('./store');
-const { validateEntity } = require('./validate');
+const { validateTerm } = require('./validate');
 
 const GLOSSARY_FILE = 'glossary.yaml';
 
@@ -14,18 +14,18 @@ function glossaryPath(rootDir) {
 function readGlossary(rootDir) {
   const filePath = glossaryPath(rootDir);
   if (!fs.existsSync(filePath)) {
-    return { version: 0, entities: {} };
+    return { version: 0, terms: {} };
   }
   return readYaml(filePath);
 }
 
 function updateGlossary(rootDir, data) {
-  // 校验实体名唯一性
-  if (data.entities) {
-    const entityNames = Object.keys(data.entities);
-    const duplicates = entityNames.filter((name, i) => entityNames.indexOf(name) !== i);
+  // 校验术语名唯一性
+  if (data.terms) {
+    const termNames = Object.keys(data.terms);
+    const duplicates = termNames.filter((name, i) => termNames.indexOf(name) !== i);
     if (duplicates.length > 0) {
-      throw new Error(`实体名重复: ${duplicates.join(', ')}`);
+      throw new Error(`术语名重复: ${duplicates.join(', ')}`);
     }
   }
 
@@ -33,49 +33,33 @@ function updateGlossary(rootDir, data) {
   const newVersion = (current.version || 0) + 1;
   const glossary = {
     version: newVersion,
-    entities: data.entities || {},
+    terms: data.terms || {},
   };
 
-  // 计算受影响的 Cell
-  const affectedCells = [];
-  const cellsDir = getCellsDir(rootDir);
-  if (fs.existsSync(cellsDir)) {
-    const files = fs.readdirSync(cellsDir).filter(f => f.endsWith('.yaml'));
-    for (const f of files) {
-      const cellData = readYaml(path.join(cellsDir, f));
-      if (cellData.entity && glossary.entities[cellData.entity]) {
-        affectedCells.push(cellData.id);
-      }
-    }
-  }
-
   writeYaml(glossaryPath(rootDir), glossary);
-  return { updated: true, version: newVersion, affected_cells: affectedCells };
+  return { updated: true, version: newVersion };
 }
 
-function addEntity(rootDir, data) {
-  const validation = validateEntity(data);
+function addTerm(rootDir, data) {
+  const validation = validateTerm(data);
   if (!validation.valid) {
     throw new Error(`校验失败: ${validation.errors.join('; ')}`);
   }
 
   const glossary = readGlossary(rootDir);
 
-  if (glossary.entities[data.name]) {
-    throw new Error(`实体 "${data.name}" 已存在`);
+  if (glossary.terms[data.term]) {
+    throw new Error(`术语 "${data.term}" 已存在`);
   }
 
-  glossary.entities[data.name] = {
-    attributes: data.attributes || [],
-    capabilities: data.capabilities || [],
-    states: data.states || [],
-    transitions: data.transitions || [],
-    relations: data.relations || [],
+  glossary.terms[data.term] = {
+    definition: data.definition,
+    aliases: data.aliases || [],
   };
   glossary.version = (glossary.version || 0) + 1;
 
   writeYaml(glossaryPath(rootDir), glossary);
-  return { added: data.name, version: glossary.version };
+  return { added: data.term, version: glossary.version };
 }
 
 function checkConsistency(rootDir) {
@@ -88,65 +72,22 @@ function checkConsistency(rootDir) {
     return { conflicts, missing_refs: missingRefs };
   }
 
-  const entityNames = new Set(Object.keys(glossary.entities || {}));
-  const files = fs.readdirSync(cellsDir).filter(f => f.endsWith('.yaml'));
-
-  for (const f of files) {
-    const cellData = readYaml(path.join(cellsDir, f));
-
-    // 检查 Cell 的 entity 字段是否在基线中存在
-    if (cellData.entity && !entityNames.has(cellData.entity)) {
-      missingRefs.push({
-        cell: cellData.id,
-        entity: cellData.entity,
-        issue: `Cell 引用了不存在的实体 "${cellData.entity}"`,
-      });
-    }
-
-    // 检查基线中 capabilities 列表是否有对应的 Cell
-    if (cellData.entity && entityNames.has(cellData.entity)) {
-      const entity = glossary.entities[cellData.entity];
-      if (entity.capabilities) {
-        for (const cap of entity.capabilities) {
-          if (cap === cellData.id) break; // 当前 Cell 就是该 capability
-        }
-      }
-    }
-  }
-
-  // 检查基线中 capabilities 是否有对应的 Cell
-  const cellIds = new Set(files.map(f => {
-    const data = readYaml(path.join(cellsDir, f));
-    return data.id;
-  }));
-
-  for (const [entityName, entity] of Object.entries(glossary.entities || {})) {
-    if (entity.capabilities) {
-      for (const cap of entity.capabilities) {
-        if (!cellIds.has(cap)) {
-          missingRefs.push({
-            entity: entityName,
-            capability: cap,
-            issue: `实体 "${entityName}" 的 capability "${cap}" 没有对应的 Cell`,
-          });
-        }
-      }
-    }
-  }
-
+  // 纯粹化 Glossary 后，不再强制校验 Cell.entity 与 Glossary 的映射关系
+  // 可以在这里实现基于文本的术语检测（未来扩展）
+  
   return { conflicts, missing_refs: missingRefs };
 }
 
-function impactByEntities(rootDir, entities) {
-  if (!Array.isArray(entities) || entities.length === 0) {
-    return { entities: [], affected_cells: [] };
+function impactByTerms(rootDir, terms) {
+  if (!Array.isArray(terms) || terms.length === 0) {
+    return { terms: [], affected_cells: [] };
   }
 
-  const targetEntities = new Set(
-    entities
-      .filter((e) => typeof e === 'string')
-      .map((e) => e.trim())
-      .filter((e) => e.length > 0),
+  const targetTerms = new Set(
+    terms
+      .filter((t) => typeof t === 'string')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
   );
 
   const affectedCells = [];
@@ -155,14 +96,23 @@ function impactByEntities(rootDir, entities) {
     const files = fs.readdirSync(cellsDir).filter(f => f.endsWith('.yaml'));
     for (const f of files) {
       const cellData = readYaml(path.join(cellsDir, f));
-      if (cellData.entity && targetEntities.has(cellData.entity)) {
+      // 简单匹配：如果 intent, plan, contract, test 包含术语名
+      const cellText = JSON.stringify(cellData);
+      let isAffected = false;
+      for (const term of targetTerms) {
+        if (cellText.includes(term)) {
+          isAffected = true;
+          break;
+        }
+      }
+      if (isAffected) {
         affectedCells.push(cellData.id);
       }
     }
   }
 
   return {
-    entities: [...targetEntities],
+    terms: [...targetTerms],
     affected_cells: [...new Set(affectedCells)],
   };
 }
@@ -170,7 +120,7 @@ function impactByEntities(rootDir, entities) {
 module.exports = {
   readGlossary,
   updateGlossary,
-  addEntity,
+  addTerm,
   checkConsistency,
-  impactByEntities,
+  impactByTerms,
 };

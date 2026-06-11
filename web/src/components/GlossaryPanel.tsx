@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import type { Glossary, GlossaryEntity, GlossaryEntityAttribute } from '../types';
+import type { Glossary, GlossaryTerm } from '../types';
 import { api } from '../api';
 
 interface GlossaryPanelProps {
@@ -9,12 +9,12 @@ interface GlossaryPanelProps {
 export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
   const [glossary, setGlossary] = useState<Glossary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'entities' | 'check'>('entities');
+  const [activeTab, setActiveTab] = useState<'terms' | 'check'>('terms');
   const [checkResult, setCheckResult] = useState<{ conflicts: unknown[]; missing_refs: unknown[] } | null>(null);
   const [pendingSave, setPendingSave] = useState<{
-    entityName: string;
-    newEntity: GlossaryEntity;
-    impact: { entities: string[]; affected_cells: string[] };
+    termName: string;
+    newTerm: GlossaryTerm;
+    impact: { terms: string[]; affected_cells: string[] };
   } | null>(null);
 
   useEffect(() => {
@@ -42,37 +42,37 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
     }
   };
 
-  const handleEntitySave = async (entityName: string, newEntity: GlossaryEntity) => {
+  const handleTermSave = async (termName: string, newTerm: GlossaryTerm) => {
     try {
-      const impact = await api.glossaryImpact([entityName]);
+      const impact = await api.glossaryImpact([termName]);
       if (impact.affected_cells.length > 0) {
-        setPendingSave({ entityName, newEntity, impact });
+        setPendingSave({ termName, newTerm, impact });
       } else {
-        await doSaveEntity(entityName, newEntity);
+        await doSaveTerm(termName, newTerm);
       }
     } catch (err) {
       console.error('Failed to check impact:', err);
     }
   };
 
-  const doSaveEntity = async (entityName: string, newEntity: GlossaryEntity) => {
+  const doSaveTerm = async (termName: string, newTerm: GlossaryTerm) => {
     if (!glossary) return;
     try {
       const updated = {
         ...glossary,
-        entities: { ...glossary.entities, [entityName]: newEntity },
+        terms: { ...glossary.terms, [termName]: newTerm },
       };
       await api.updateGlossary(updated);
       setPendingSave(null);
       await loadGlossary();
     } catch (err) {
-      console.error('Failed to save entity:', err);
+      console.error('Failed to save term:', err);
     }
   };
 
   const handleConfirmSave = () => {
     if (!pendingSave) return;
-    doSaveEntity(pendingSave.entityName, pendingSave.newEntity);
+    doSaveTerm(pendingSave.termName, pendingSave.newTerm);
   };
 
   const handleCancelSave = () => {
@@ -83,7 +83,7 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon">📖</div>
-        <div>Loading glossary...</div>
+        <div>加载术语库中...</div>
       </div>
     );
   }
@@ -92,12 +92,12 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon">📖</div>
-        <div>No glossary found</div>
+        <div>未找到术语库</div>
       </div>
     );
   }
 
-  const entityEntries = Object.entries(glossary.entities);
+  const termEntries = Object.entries(glossary.terms || {});
 
   return (
     <div
@@ -120,22 +120,22 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
         style={{ padding: 'var(--space-md) var(--space-xl)', flexShrink: 0 }}
       >
         <div>
-          <h3 style={{ margin: 0, fontSize: 'var(--text-lg)', fontWeight: 'var(--font-bold)' }}>Glossary</h3>
+          <h3 style={{ margin: 0, fontSize: 'var(--text-lg)', fontWeight: 'var(--font-bold)' }}>术语库（Glossary）</h3>
           <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>v{glossary.version}</span>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
           <button onClick={handleCheck} className="btn btn-primary">
-            Check
+            术语检查
           </button>
           <button onClick={onClose} className="btn">
-            Close
+            关闭
           </button>
         </div>
       </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        {(['entities', 'check'] as const).map((tab) => (
+        {(['terms', 'check'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -152,28 +152,28 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
               transition: 'all 0.15s ease',
             }}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            {tab === 'entities' && ` (${entityEntries.length})`}
+            {tab === 'terms' ? '术语' : '检查结果'}
+            {tab === 'terms' && ` (${termEntries.length})`}
           </button>
         ))}
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: 'var(--space-xl)' }}>
-        {activeTab === 'entities' && (
+        {activeTab === 'terms' && (
           <div>
-            {entityEntries.length === 0 ? (
+            {termEntries.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-icon">📭</div>
-                <div>No entities defined</div>
+                  <div>暂无术语定义</div>
               </div>
             ) : (
-              entityEntries.map(([name, entity]: [string, GlossaryEntity]) => (
-                <EntityCard
+              termEntries.map(([name, term]: [string, GlossaryTerm]) => (
+                <TermCard
                   key={name}
                   name={name}
-                  entity={entity}
-                  onSave={handleEntitySave}
+                  term={term}
+                  onSave={handleTermSave}
                 />
               ))
             )}
@@ -185,16 +185,16 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
             {!checkResult ? (
               <div className="empty-state">
                 <div className="empty-state-icon">🔍</div>
-                <div>Click "Check" to run consistency check</div>
+                  <div>点击“术语检查”以运行一致性校验</div>
               </div>
             ) : (
               <>
-                <CheckSection title="Conflicts" items={checkResult.conflicts} />
-                <CheckSection title="Missing References" items={checkResult.missing_refs} />
+                <CheckSection title="术语冲突（Conflicts）" items={checkResult.conflicts} />
+                <CheckSection title="缺失引用（Missing References）" items={checkResult.missing_refs} />
                 {checkResult.conflicts.length === 0 && checkResult.missing_refs.length === 0 && (
                   <div className="empty-state">
                     <div style={{ color: 'var(--success)', fontWeight: 'var(--font-bold)', fontSize: 'var(--text-lg)' }}>
-                      All checks passed!
+                      术语检查通过
                     </div>
                   </div>
                 )}
@@ -219,10 +219,10 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
           }}
         >
           <div style={{ fontWeight: 'var(--font-bold)', fontSize: 'var(--text-md)', color: 'var(--danger)', marginBottom: 'var(--space-sm)' }}>
-            Impact Detected
+            检测到影响范围
           </div>
           <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-xs)' }}>
-            Modifying <strong>{pendingSave.entityName}</strong> will affect:
+            修改 <strong>{pendingSave.termName}</strong> 会影响以下 Cell，确认后请继续修订相关模块：
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap', marginBottom: 'var(--space-md)' }}>
             {pendingSave.impact.affected_cells.map((cell) => (
@@ -233,10 +233,10 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-sm)', justifyContent: 'flex-end' }}>
             <button onClick={handleCancelSave} className="btn">
-              Cancel
+              取消
             </button>
             <button onClick={handleConfirmSave} className="btn btn-danger">
-              Confirm Save
+              继续保存
             </button>
           </div>
         </div>
@@ -245,19 +245,19 @@ export default function GlossaryPanel({ onClose }: GlossaryPanelProps) {
   );
 }
 
-function EntityCard({ name, entity, onSave }: { name: string; entity: GlossaryEntity; onSave: (name: string, entity: GlossaryEntity) => void }) {
+function TermCard({ name, term, onSave }: { name: string; term: GlossaryTerm; onSave: (name: string, term: GlossaryTerm) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<GlossaryEntity>(entity);
+  const [draft, setDraft] = useState<GlossaryTerm>(term);
 
   const startEdit = () => {
-    setDraft({ ...entity, attributes: entity.attributes.map(a => ({ ...a })), capabilities: [...entity.capabilities] });
+    setDraft({ ...term, aliases: [...(term.aliases || [])] });
     setEditing(true);
   };
 
   const cancelEdit = () => {
     setEditing(false);
-    setDraft(entity);
+    setDraft(term);
   };
 
   const saveEdit = () => {
@@ -265,33 +265,27 @@ function EntityCard({ name, entity, onSave }: { name: string; entity: GlossaryEn
     onSave(name, draft);
   };
 
-  const addAttribute = () => {
-    setDraft({ ...draft, attributes: [...draft.attributes, { name: '', type: 'string', description: '' }] });
+  const updateDefinition = (value: string) => {
+    setDraft({ ...draft, definition: value });
   };
 
-  const updateAttribute = (index: number, field: keyof GlossaryEntityAttribute, value: string) => {
-    const attrs = draft.attributes.map((a, i) => i === index ? { ...a, [field]: value } : a);
-    setDraft({ ...draft, attributes: attrs });
+  const addAlias = () => {
+    setDraft({ ...draft, aliases: [...(draft.aliases || []), ''] });
   };
 
-  const removeAttribute = (index: number) => {
-    setDraft({ ...draft, attributes: draft.attributes.filter((_, i) => i !== index) });
+  const updateAlias = (index: number, value: string) => {
+    const aliases = [...(draft.aliases || [])];
+    aliases[index] = value;
+    setDraft({ ...draft, aliases });
   };
 
-  const addCapability = () => {
-    setDraft({ ...draft, capabilities: [...draft.capabilities, ''] });
+  const removeAlias = (index: number) => {
+    const aliases = [...(draft.aliases || [])];
+    aliases.splice(index, 1);
+    setDraft({ ...draft, aliases });
   };
 
-  const updateCapability = (index: number, value: string) => {
-    const caps = draft.capabilities.map((c, i) => i === index ? value : c);
-    setDraft({ ...draft, capabilities: caps });
-  };
-
-  const removeCapability = (index: number) => {
-    setDraft({ ...draft, capabilities: draft.capabilities.filter((_, i) => i !== index) });
-  };
-
-  const data = editing ? draft : entity;
+  const data = editing ? draft : term;
 
   return (
     <div
@@ -311,9 +305,6 @@ function EntityCard({ name, entity, onSave }: { name: string; entity: GlossaryEn
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
           <span style={{ fontWeight: 'var(--font-bold)', fontSize: 'var(--text-sm)', color: 'var(--info)' }}>{name}</span>
-          {entity.capabilities.length > 0 && (
-            <span className="tag tag-muted">{entity.capabilities.length} capabilities</span>
-          )}
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-xs)', alignItems: 'center' }}>
           {expanded && !editing && (
@@ -333,90 +324,53 @@ function EntityCard({ name, entity, onSave }: { name: string; entity: GlossaryEn
       </div>
       {expanded && (
         <div className="card-body" style={{ fontSize: 'var(--text-sm)' }}>
-          {/* Attributes */}
+          {/* Definition */}
           <div style={{ marginBottom: 'var(--space-md)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
-              <span className="section-title">Attributes</span>
-              {editing && (
-                <button onClick={addAttribute} className="btn btn-sm btn-primary">
-                  + Add
-                </button>
-              )}
+              <span className="section-title">Definition</span>
             </div>
-            {data.attributes.length === 0 && !editing && (
-              <div style={{ paddingLeft: 'var(--space-sm)', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>—</div>
+            {editing ? (
+              <textarea
+                value={data.definition}
+                onChange={(e) => updateDefinition(e.target.value)}
+                className="input"
+                style={{ width: '100%', minHeight: 60 }}
+              />
+            ) : (
+              <div style={{ paddingLeft: 'var(--space-sm)' }}>{data.definition}</div>
             )}
-            {data.attributes.map((attr, i) => (
-              <div key={i} style={{ paddingLeft: 'var(--space-sm)', marginBottom: 'var(--space-xs)', display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-                {editing ? (
-                  <>
-                    <input
-                      value={attr.name}
-                      onChange={(e) => updateAttribute(i, 'name', e.target.value)}
-                      placeholder="name"
-                      className="input"
-                      style={{ width: 80 }}
-                    />
-                    <span style={{ color: 'var(--text-tertiary)' }}>:</span>
-                    <input
-                      value={attr.type}
-                      onChange={(e) => updateAttribute(i, 'type', e.target.value)}
-                      placeholder="type"
-                      className="input"
-                      style={{ width: 60 }}
-                    />
-                    <input
-                      value={attr.description}
-                      onChange={(e) => updateAttribute(i, 'description', e.target.value)}
-                      placeholder="description"
-                      className="input"
-                      style={{ flex: 1 }}
-                    />
-                    <button onClick={() => removeAttribute(i)} className="btn btn-sm btn-danger" style={{ padding: '1px 6px' }}>
-                      ×
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ fontWeight: 'var(--font-semibold)' }}>{attr.name}</span>
-                    <span style={{ color: 'var(--text-tertiary)' }}>: {attr.type}</span>
-                    {attr.description && <span style={{ color: 'var(--text-muted)' }}>— {attr.description}</span>}
-                  </>
-                )}
-              </div>
-            ))}
           </div>
 
-          {/* Capabilities */}
+          {/* Aliases */}
           <div style={{ marginBottom: 'var(--space-md)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-xs)' }}>
-              <span className="section-title">Capabilities</span>
+              <span className="section-title">Aliases</span>
               {editing && (
-                <button onClick={addCapability} className="btn btn-sm btn-primary">
+                <button onClick={addAlias} className="btn btn-sm btn-primary">
                   + Add
                 </button>
               )}
             </div>
-            {data.capabilities.length === 0 && !editing && (
+            {(!data.aliases || data.aliases.length === 0) && !editing && (
               <div style={{ paddingLeft: 'var(--space-sm)', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>—</div>
             )}
             <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
-              {data.capabilities.map((cap, i) => (
+              {(data.aliases || []).map((alias, i) => (
                 editing ? (
                   <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
                     <input
-                      value={cap}
-                      onChange={(e) => updateCapability(i, e.target.value)}
+                      value={alias}
+                      onChange={(e) => updateAlias(i, e.target.value)}
                       className="input"
                       style={{ width: 100, fontSize: 'var(--text-xs)' }}
                     />
-                    <button onClick={() => removeCapability(i)} className="btn btn-sm btn-danger" style={{ padding: '1px 6px' }}>
+                    <button onClick={() => removeAlias(i)} className="btn btn-sm btn-danger" style={{ padding: '1px 6px' }}>
                       ×
                     </button>
                   </span>
                 ) : (
-                  <span key={cap} className="tag tag-primary">
-                    {cap}
+                  <span key={i} className="tag tag-primary">
+                    {alias}
                   </span>
                 )
               ))}
