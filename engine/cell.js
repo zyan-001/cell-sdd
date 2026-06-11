@@ -1,0 +1,400 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const {
+  findProjectRoot,
+  initProject,
+  createCell,
+  readCell,
+  updateCell,
+  deleteCell,
+  listCells,
+  createDelta,
+  readDelta,
+  updateDelta,
+  deleteDelta,
+  listDeltas,
+  saveModuleDraft,
+  readModuleDraft,
+  clearModuleDraft,
+} = require('./lib/store');
+const {
+  impactAnalysis,
+  getDeps,
+  getDependents,
+  consistencyCheck,
+  findRoots,
+  generateMermaid,
+  propagateChange,
+  listStale,
+  confirmCell,
+  evaluateGlobalImpact,
+  slice,
+} = require('./lib/graph');
+const {
+  previewMerge,
+  executeMerge,
+  archiveDelta,
+} = require('./lib/merge');
+const {
+  readGlossary,
+  updateGlossary,
+  addEntity,
+  checkConsistency,
+  impactByEntities,
+} = require('./lib/glossary');
+
+function output(data) {
+  console.log(JSON.stringify(data, null, 2));
+}
+
+function outputError(message) {
+  process.stderr.write(JSON.stringify({ error: message }) + '\n');
+  process.exit(1);
+}
+
+function resolveData(options) {
+  if (options.file) {
+    const fs = require('fs');
+    const content = fs.readFileSync(options.file, 'utf-8');
+    return JSON.parse(content);
+  }
+  if (options.data) {
+    return JSON.parse(options.data);
+  }
+  return null;
+}
+
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  if (args.length === 0) {
+    return { command: 'help' };
+  }
+
+  const command = args[0];
+  const options = {};
+  const positional = [];
+
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === '--data' && i + 1 < args.length) {
+      options.data = args[i + 1];
+      i++;
+    } else if (args[i] === '--file' && i + 1 < args.length) {
+      options.file = args[i + 1];
+      i++;
+    } else if (args[i] === '--module' && i + 1 < args.length) {
+      options.module = args[i + 1];
+      i++;
+    } else if (args[i] === '--threshold' && i + 1 < args.length) {
+      options.threshold = parseInt(args[i + 1], 10);
+      i++;
+    } else if (args[i] === '--hops' && i + 1 < args.length) {
+      options.hops = parseInt(args[i + 1], 10);
+      i++;
+    } else {
+      positional.push(args[i]);
+    }
+  }
+
+  return { command, positional, options };
+}
+
+function main() {
+  const { command, positional, options } = parseArgs(process.argv);
+
+  if (command === 'help') {
+    console.log(`
+Cell-Based SDD 引擎
+
+用法: node cell.js <command> [options]
+
+项目管理:
+  init                           初始化项目
+
+全局基线管理:
+  glossary-read                  读取全局基线
+  glossary-update --data '<json>' 更新全局基线（全量替换）
+  glossary-add-entity --data '<json>' 添加实体
+  glossary-check                  检查 Cell 与基线的一致性
+  glossary-impact --data '{"entities":["user","session"]}' 计算实体变更影响范围
+
+Cell CRUD:
+  create --data '<json>'         创建 Cell
+  read <cell-id>                 读取 Cell
+  update <cell-id> --module <m> --data '<json>'  更新 Cell 模块
+  delete <cell-id>               删除 Cell
+  list                           列出所有 Cell
+
+Delta 管理:
+  delta-create --data '<json>'   创建 Delta
+  delta-read <delta-id>          读取 Delta
+  delta-update <delta-id> --module <m> --data '<json>'  更新 Delta 模块
+  delta-delete <delta-id>        删除 Delta
+  delta-list                     列出所有 Delta
+  merge-preview <delta-id>       预览合并结果
+  merge <delta-id>               执行合并
+  archive <delta-id>             归档 Delta
+
+图操作:
+  impact <cell-id>               影响分析
+  deps <cell-id>                 依赖查看
+  check                          一致性检查
+  roots [--threshold N]          聚合根推导
+  graph                          生成 Mermaid 依赖图
+
+上下文切片:
+  slice <cell-id> [--hops N]     获取 Cell 局部上下文（默认 1 跳）
+
+变更传播:
+  propagate <cell-id>            传播变更
+  stale                          列出 stale Cell
+  confirm <cell-id> [--module <plan|contract|all>]  确认 Cell
+  confirm-module <cell-id> --module <intent|plan|contract|test> --data '<json>'  确认并提交模块
+  draft-read <cell-id> --module <intent|plan|contract|test>      读取模块草稿
+`);
+    process.exit(0);
+  }
+
+  try {
+    // init 不需要项目根目录
+    if (command === 'init') {
+      const rootDir = process.cwd();
+      output(initProject(rootDir));
+      return;
+    }
+
+    // 其他命令需要找到项目根目录
+    const rootDir = findProjectRoot(process.cwd());
+    if (!rootDir) {
+      outputError('未找到 .sdd/ 目录，请先运行 node cell.js init');
+    }
+
+    switch (command) {
+      // 全局基线管理
+      case 'glossary-read': {
+        output(readGlossary(rootDir));
+        break;
+      }
+      case 'glossary-update': {
+        const data = resolveData(options);
+        if (!data) outputError('缺少 --data 或 --file 参数');
+        output(updateGlossary(rootDir, data));
+        break;
+      }
+      case 'glossary-add-entity': {
+        const data = resolveData(options);
+        if (!data) outputError('缺少 --data 或 --file 参数');
+        output(addEntity(rootDir, data));
+        break;
+      }
+      case 'glossary-check': {
+        output(checkConsistency(rootDir));
+        break;
+      }
+      case 'glossary-impact': {
+        const data = resolveData(options);
+        if (!data || !Array.isArray(data.entities)) {
+          outputError('缺少 --data 或 --file 参数，且必须包含 entities 数组');
+        }
+        output(impactByEntities(rootDir, data.entities));
+        break;
+      }
+
+      // Cell CRUD
+      case 'create': {
+        const data = resolveData(options);
+        if (!data) outputError('缺少 --data 或 --file 参数');
+        output(createCell(rootDir, data));
+        break;
+      }
+      case 'read': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        output(readCell(rootDir, id));
+        break;
+      }
+      case 'update': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        if (!options.module) outputError('缺少 --module 参数');
+        const modData = resolveData(options);
+        if (modData === null) outputError('缺少 --data 或 --file 参数');
+        output(updateCell(rootDir, id, options.module, modData));
+        break;
+      }
+      case 'delete': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        const deps = getDependents(rootDir, id);
+        const result = deleteCell(rootDir, id);
+        result.dependents = deps.dependents;
+        output(result);
+        break;
+      }
+      case 'list': {
+        output(listCells(rootDir));
+        break;
+      }
+
+      // Delta CRUD
+      case 'delta-create': {
+        const data = resolveData(options);
+        if (!data) outputError('缺少 --data 或 --file 参数');
+        output(createDelta(rootDir, data));
+        break;
+      }
+      case 'delta-read': {
+        const id = positional[0];
+        if (!id) outputError('缺少 delta-id 参数');
+        output(readDelta(rootDir, id));
+        break;
+      }
+      case 'delta-update': {
+        const id = positional[0];
+        if (!id) outputError('缺少 delta-id 参数');
+        if (!options.module) outputError('缺少 --module 参数');
+        const modData = resolveData(options);
+        if (modData === null) outputError('缺少 --data 或 --file 参数');
+        output(updateDelta(rootDir, id, options.module, modData));
+        break;
+      }
+      case 'delta-delete': {
+        const id = positional[0];
+        if (!id) outputError('缺少 delta-id 参数');
+        output(deleteDelta(rootDir, id));
+        break;
+      }
+      case 'delta-list': {
+        output(listDeltas(rootDir));
+        break;
+      }
+      case 'merge-preview': {
+        const id = positional[0];
+        if (!id) outputError('缺少 delta-id 参数');
+        output(previewMerge(rootDir, id));
+        break;
+      }
+      case 'merge': {
+        const id = positional[0];
+        if (!id) outputError('缺少 delta-id 参数');
+        output(executeMerge(rootDir, id));
+        break;
+      }
+      case 'archive': {
+        const id = positional[0];
+        if (!id) outputError('缺少 delta-id 参数');
+        output(archiveDelta(rootDir, id));
+        break;
+      }
+
+      // 图操作
+      case 'impact': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        output(impactAnalysis(rootDir, id));
+        break;
+      }
+      case 'deps': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        output(getDeps(rootDir, id));
+        break;
+      }
+      case 'check': {
+        output(consistencyCheck(rootDir));
+        break;
+      }
+      case 'roots': {
+        const threshold = options.threshold || 2;
+        output(findRoots(rootDir, threshold));
+        break;
+      }
+      case 'graph': {
+        output(generateMermaid(rootDir));
+        break;
+      }
+
+      // 上下文切片
+      case 'slice': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        const hops = options.hops || 1;
+        output(slice(rootDir, id, hops));
+        break;
+      }
+
+      // 变更传播
+      case 'propagate': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        output(propagateChange(rootDir, id));
+        break;
+      }
+      case 'stale': {
+        output(listStale(rootDir));
+        break;
+      }
+      case 'confirm': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        const mod = options.module || 'all';
+        output(confirmCell(rootDir, id, mod));
+        break;
+      }
+      case 'confirm-module': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        if (!options.module) outputError('缺少 --module 参数');
+        const modData = resolveData(options);
+        if (modData === null) outputError('缺少 --data 或 --file 参数');
+
+        const evaluation = evaluateGlobalImpact(rootDir, id, options.module, modData);
+        if (evaluation.blocked) {
+          const draft = saveModuleDraft(rootDir, id, options.module, modData, {
+            blocked: true,
+            reasons: evaluation.reasons,
+            affected: evaluation.impact.affected,
+          });
+          output({
+            blocked: true,
+            reasons: evaluation.reasons,
+            impact: evaluation.impact,
+            current_cell_impacted_modules: evaluation.current_cell_impacted_modules,
+            affected_cell_impacted_modules: evaluation.affected_cell_impacted_modules,
+            draft_saved: draft.saved,
+            draft_path: draft.path,
+          });
+          break;
+        }
+
+        const updated = updateCell(rootDir, id, options.module, modData);
+        clearModuleDraft(rootDir, id, options.module);
+        const propagated = propagateChange(rootDir, id);
+        output({
+          blocked: false,
+          updated,
+          impact: evaluation.impact,
+          current_cell_impacted_modules: evaluation.current_cell_impacted_modules,
+          affected_cell_impacted_modules: evaluation.affected_cell_impacted_modules,
+          marked_stale: propagated.marked_stale,
+        });
+        break;
+      }
+      case 'draft-read': {
+        const id = positional[0];
+        if (!id) outputError('缺少 cell-id 参数');
+        if (!options.module) outputError('缺少 --module 参数');
+        output({ draft: readModuleDraft(rootDir, id, options.module) });
+        break;
+      }
+
+      default:
+        outputError(`未知命令: ${command}`);
+    }
+  } catch (err) {
+    outputError(err.message);
+  }
+}
+
+main();

@@ -1,0 +1,15 @@
+{
+  "id": "delta-expert-async",
+  "target": "expert-engine",
+  "intent": "expert-engine新增异步调用模式，支持长时间推理",
+  "plan": "新增异步调用接口，返回task-id，轮询获取结果",
+  "contract": [
+    { "when": "请求异步推理", "then": "返回task-id，状态pending" },
+    { "when": "查询task状态完成", "then": "返回推理结果和置信度" }
+  ],
+  "test": [
+    { "scenario": "异步调用", "given": "推理需要>5s", "when": "请求异步推理", "then": "返回task-id" },
+    { "scenario": "轮询结果", "given": "task已完成", "when": "查询task", "then": "返回结果" }
+  ],
+  "depends_on": []
+}

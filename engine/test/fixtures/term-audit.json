@@ -1,0 +1,1 @@
+{ "term": "推理审计", "definition": "对推理链路中每一步的输入、输出、置信度进行不可篡改的记录", "aliases": ["reasoning-audit", "链路追踪"] }

@@ -1,0 +1,1 @@
+{ "term": "自循环", "definition": "Agent在reviewer驳回后自动重新推理的循环机制，直到通过或达到最大重试次数", "aliases": ["self-loop", "迭代推理"] }

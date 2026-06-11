@@ -1,0 +1,17 @@
+{
+  "name": "expert-knowledge",
+  "attributes": [
+    { "name": "id", "type": "string", "description": "知识域标识" },
+    { "name": "domain", "type": "string", "description": "领域名称" },
+    { "name": "rules", "type": "array", "description": "专家规则集" }
+  ],
+  "capabilities": ["expert-engine"],
+  "states": [
+    { "name": "active", "description": "知识可用" },
+    { "name": "deprecated", "description": "已废弃" }
+  ],
+  "transitions": [
+    { "from": "active", "to": "deprecated", "trigger": "deprecate" }
+  ],
+  "relations": []
+}

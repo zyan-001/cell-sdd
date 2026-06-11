@@ -1,0 +1,9 @@
+{
+  "id": "audit-chain",
+  "entity": "reasoning-chain",
+  "intent": "不可篡改地记录推理链路中每一步的输入、输出、置信度、时间戳。支持链路回溯和审计查询。为reviewer提供审查依据。",
+  "plan": "待填充",
+  "contract": [{ "when": "待填充", "then": "待填充" }],
+  "test": [{ "scenario": "待填充", "given": "待填充", "when": "待填充", "then": "待填充" }],
+  "depends_on": []
+}

@@ -1,0 +1,17 @@
+{
+  "name": "cell-sdd-engine",
+  "version": "0.1.0",
+  "description": "Cell-Based SDD 引擎 — 规范驱动开发的图结构模型引擎",
+  "main": "cell.js",
+  "scripts": {
+    "server": "node server.js"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "express": "^4.21.0",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

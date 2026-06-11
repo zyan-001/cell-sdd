@@ -1,0 +1,28 @@
+{
+  "name": "reasoning-chain",
+  "attributes": [
+    { "name": "id", "type": "uuid", "description": "链路唯一标识" },
+    { "name": "query", "type": "string", "description": "原始查询" },
+    { "name": "steps", "type": "array", "description": "推理步骤列表" },
+    { "name": "conclusion", "type": "string", "description": "最终结论" },
+    { "name": "confidence", "type": "float", "description": "整体置信度 0-1" }
+  ],
+  "capabilities": ["search-reasoning", "reviewer-agent", "audit-chain"],
+  "states": [
+    { "name": "draft", "description": "推理进行中" },
+    { "name": "under-review", "description": "审查中" },
+    { "name": "approved", "description": "审查通过" },
+    { "name": "rejected", "description": "审查驳回" },
+    { "name": "archived", "description": "已归档" }
+  ],
+  "transitions": [
+    { "from": "draft", "to": "under-review", "trigger": "submit-review" },
+    { "from": "under-review", "to": "approved", "trigger": "review-pass" },
+    { "from": "under-review", "to": "rejected", "trigger": "review-fail" },
+    { "from": "rejected", "to": "draft", "trigger": "retry-reasoning" },
+    { "from": "approved", "to": "archived", "trigger": "archive" }
+  ],
+  "relations": [
+    { "target": "expert-knowledge", "kind": "many-to-many", "description": "推理链路引用专家知识" }
+  ]
+}

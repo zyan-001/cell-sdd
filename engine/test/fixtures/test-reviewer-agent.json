@@ -1,0 +1,5 @@
+[
+  { "scenario": "审查通过", "given": "推理链路3步，每步置信度0.8", "when": "审查", "then": "返回approved" },
+  { "scenario": "审查驳回-置信度不足", "given": "推理链路第2步置信度0.4", "when": "审查", "then": "返回rejected，指明第2步问题" },
+  { "scenario": "审查驳回-审计缺失", "given": "推理链路第3步无审计记录", "when": "审查", "then": "返回rejected，标记审计缺失" }
+]

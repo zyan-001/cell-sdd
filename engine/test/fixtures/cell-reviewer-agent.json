@@ -1,0 +1,11 @@
+{
+  "id": "reviewer-agent",
+  "entity": "reasoning-chain",
+  "intent": "审查推理链路的质量和一致性。检查逻辑跳跃、置信度不足、事实矛盾等问题。决定链路通过/驳回，驳回时附上具体原因触发自循环。",
+  "plan": "待填充",
+  "contract": [{ "when": "待填充", "then": "待填充" }],
+  "test": [{ "scenario": "待填充", "given": "待填充", "when": "待填充", "then": "待填充" }],
+  "depends_on": [
+    { "id": "audit-chain", "kind": "call" }
+  ]
+}

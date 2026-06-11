@@ -1,0 +1,12 @@
+{
+  "id": "search-reasoning",
+  "entity": "reasoning-chain",
+  "intent": "根据用户查询执行多步搜索推理，生成结构化推理链路。每步推理调用专家引擎获取领域判断，并将步骤记录到审计链路。支持reviewer驳回后的重新推理（自循环）。",
+  "plan": "待填充",
+  "contract": [{ "when": "待填充", "then": "待填充" }],
+  "test": [{ "scenario": "待填充", "given": "待填充", "when": "待填充", "then": "待填充" }],
+  "depends_on": [
+    { "id": "expert-engine", "kind": "call" },
+    { "id": "audit-chain", "kind": "call" }
+  ]
+}

@@ -1,0 +1,5 @@
+[
+  { "scenario": "写入审计步骤", "given": "推理步骤含query/step/conclusion", "when": "写入审计", "then": "返回序号和内容哈希" },
+  { "scenario": "查询完整链路", "given": "链路ID存在，含3步", "when": "查询审计记录", "then": "返回3步记录，哈希链连续" },
+  { "scenario": "篡改检测", "given": "修改第2步内容", "when": "校验哈希链", "then": "校验失败，拒绝操作" }
+]

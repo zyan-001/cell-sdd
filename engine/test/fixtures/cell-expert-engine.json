@@ -1,0 +1,9 @@
+{
+  "id": "expert-engine",
+  "entity": "expert-knowledge",
+  "intent": "提供领域专家判断能力。接收推理步骤上下文，返回领域规则匹配结果和置信度评分。作为推理链路的外部知识源。",
+  "plan": "待填充",
+  "contract": [{ "when": "待填充", "then": "待填充" }],
+  "test": [{ "scenario": "待填充", "given": "待填充", "when": "待填充", "then": "待填充" }],
+  "depends_on": []
+}
