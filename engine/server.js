@@ -169,7 +169,10 @@ app.put('/api/cells/:id/:module', getRootDir, (req, res) => {
     if (!['intent', 'plan', 'contract', 'test', 'depends_on', 'schema', 'states', 'invariants', 'requires_state'].includes(module)) {
       return res.status(400).json({ error: `无效模块: ${module}` });
     }
-    res.json(updateCell(req.rootDir, id, module, req.body));
+    const result = updateCell(req.rootDir, id, module, req.body);
+    const propagated = propagateChange(req.rootDir, id);
+    result.marked_stale = propagated.marked_stale;
+    res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

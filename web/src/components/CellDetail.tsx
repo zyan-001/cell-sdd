@@ -287,6 +287,9 @@ export default function CellDetail({ cellId, onCellChanged }: CellDetailProps) {
           structuredData={
             mod === 'contract' ? cell.contract as ContractItem[] :
             mod === 'test' ? cell.test as TestItem[] :
+            mod === 'schema' ? cell.schema as SchemaField[] :
+            mod === 'states' ? cell.states as StateItem[] :
+            mod === 'invariants' ? cell.invariants as string[] :
             undefined
           }
           renderPlanAsMermaid={mod === 'plan' && cell.kind === 'Journey'}

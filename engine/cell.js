@@ -120,13 +120,13 @@ Cell-Based SDD 引擎
   --root <path>                  指定用户项目根目录（.sdd/ 所在目录）
 
 项目管理:
-  init [--root <path>]           初始化项目
+  init [--root <path>]           初始化项�?
 
 全局基线管理:
   glossary-read                  读取全局基线
   glossary-update --data '<json>' 更新全局基线（全量替换）
   glossary-add-term --data '<json>' 添加术语
-  glossary-check                  检查 Cell 与基线的一致性
+  glossary-check                  检�?Cell 与基线的一致�?
   glossary-impact --data '{"terms":["user","session"]}' 计算术语变更影响范围
 
 Cell CRUD:
@@ -134,34 +134,34 @@ Cell CRUD:
   read <cell-id>                 读取 Cell
   update <cell-id> --module <m> --data '<json>'  更新 Cell 模块
   delete <cell-id>               删除 Cell
-  list                           列出所有 Cell
+  list                           列出所�?Cell
 
 Delta 管理:
   delta-create --data '<json>'   创建 Delta
   delta-read <delta-id>          读取 Delta
   delta-update <delta-id> --module <m> --data '<json>'  更新 Delta 模块
   delta-delete <delta-id>        删除 Delta
-  delta-list                     列出所有 Delta
+  delta-list                     列出所�?Delta
   merge-preview <delta-id>       预览合并结果
   merge <delta-id>               执行合并
   archive <delta-id>             归档 Delta
 
-图操作:
+图操�?
   impact <cell-id>               影响分析
   deps <cell-id>                 依赖查看
-  check                          一致性检查
-  roots [--threshold N]          聚合根推导
-  graph                          生成 Mermaid 依赖图
+  check                          一致性检�?
+  roots [--threshold N]          聚合根推�?
+  graph                          生成 Mermaid 依赖�?
 
-上下文切片:
-  slice <cell-id> [--hops N]     获取 Cell 局部上下文（默认 1 跳）
+上下文切�?
+  slice <cell-id> [--hops N]     获取 Cell 局部上下文（默�?1 跳）
 
 变更传播:
   propagate <cell-id>            传播变更
   stale                          列出 stale Cell
   dirty                          列出 dirty 模块（用户在 Web 页面修改后标记）
   confirm <cell-id> [--module <plan|contract|all>]  确认 Cell
-  confirm-module <cell-id> --module <intent|plan|contract|test|schema|states|invariants|requires_state> --data '<json>'  确认并提交模块
+  confirm-module <cell-id> --module <intent|plan|contract|test|schema|states|invariants|requires_state> --data '<json>'  确认并提交模�?
   draft-read <cell-id> --module <intent|plan|contract|test|schema|states|invariants|requires_state>      读取模块草稿
 `);
     process.exit(0);
@@ -172,7 +172,7 @@ Delta 管理:
     const fs = require('fs');
     const explicitRoot = options.root || null;
 
-    // init 不需要已有 .sdd/
+    // init 不需要已�?.sdd/
     if (command === 'init') {
       const initRoot = explicitRoot || process.cwd();
       output(initProject(initRoot));
@@ -183,13 +183,13 @@ Delta 管理:
     let rootDir;
     if (explicitRoot) {
       if (!fs.existsSync(path.join(explicitRoot, '.sdd'))) {
-        outputError(`指定根目录 ${explicitRoot} 下不存在 .sdd/，请先运行 init`);
+        outputError(`指定根目�?${explicitRoot} 下不存在 .sdd/，请先运�?init`);
       }
       rootDir = explicitRoot;
     } else {
       rootDir = findProjectRoot(process.cwd());
       if (!rootDir) {
-        outputError('未找到 .sdd/ 目录，请先运行 node cell.js init');
+        outputError('未找�?.sdd/ 目录，请先运�?node cell.js init');
       }
     }
 
@@ -201,13 +201,13 @@ Delta 管理:
       }
       case 'glossary-update': {
         const data = resolveData(options);
-        if (!data) outputError('缺少 --data 或 --file 参数');
+        if (!data) outputError('缺少 --data �?--file 参数');
         output(updateGlossary(rootDir, data));
         break;
       }
       case 'glossary-add-term': {
         const data = resolveData(options);
-        if (!data) outputError('缺少 --data 或 --file 参数');
+        if (!data) outputError('缺少 --data �?--file 参数');
         output(addTerm(rootDir, data));
         break;
       }
@@ -218,7 +218,7 @@ Delta 管理:
       case 'glossary-impact': {
         const data = resolveData(options);
         if (!data || !Array.isArray(data.terms)) {
-          outputError('缺少 --data 或 --file 参数，且必须包含 terms 数组');
+          outputError('缺少 --data �?--file 参数，且必须包含 terms 数组');
         }
         output(impactByTerms(rootDir, data.terms));
         break;
@@ -227,7 +227,7 @@ Delta 管理:
       // Cell CRUD
       case 'create': {
         const data = resolveData(options);
-        if (!data) outputError('缺少 --data 或 --file 参数');
+        if (!data) outputError('缺少 --data �?--file 参数');
         output(createCell(rootDir, data));
         break;
       }
@@ -242,8 +242,11 @@ Delta 管理:
         if (!id) outputError('缺少 cell-id 参数');
         if (!options.module) outputError('缺少 --module 参数');
         const modData = resolveData(options);
-        if (modData === null) outputError('缺少 --data 或 --file 参数');
-        output(updateCell(rootDir, id, options.module, modData));
+        if (modData === null) outputError('缺少 --data �?--file 参数');
+        const result = updateCell(rootDir, id, options.module, modData);
+        const propagated = propagateChange(rootDir, id);
+        result.marked_stale = propagated.marked_stale;
+        output(result);
         break;
       }
       case 'delete': {
@@ -263,7 +266,7 @@ Delta 管理:
       // Delta CRUD
       case 'delta-create': {
         const data = resolveData(options);
-        if (!data) outputError('缺少 --data 或 --file 参数');
+        if (!data) outputError('缺少 --data �?--file 参数');
         output(createDelta(rootDir, data));
         break;
       }
@@ -278,7 +281,7 @@ Delta 管理:
         if (!id) outputError('缺少 delta-id 参数');
         if (!options.module) outputError('缺少 --module 参数');
         const modData = resolveData(options);
-        if (modData === null) outputError('缺少 --data 或 --file 参数');
+        if (modData === null) outputError('缺少 --data �?--file 参数');
         output(updateDelta(rootDir, id, options.module, modData));
         break;
       }
@@ -311,7 +314,7 @@ Delta 管理:
         break;
       }
 
-      // 图操作
+      // 图操�?
       case 'impact': {
         const id = positional[0];
         if (!id) outputError('缺少 cell-id 参数');
@@ -338,7 +341,7 @@ Delta 管理:
         break;
       }
 
-      // 上下文切片
+      // 上下文切�?
       case 'slice': {
         const id = positional[0];
         if (!id) outputError('缺少 cell-id 参数');
@@ -374,7 +377,7 @@ Delta 管理:
         if (!id) outputError('缺少 cell-id 参数');
         if (!options.module) outputError('缺少 --module 参数');
         const modData = resolveData(options);
-        if (modData === null) outputError('缺少 --data 或 --file 参数');
+        if (modData === null) outputError('缺少 --data �?--file 参数');
         const force = options.force || false;
 
         const evaluation = evaluateGlobalImpact(rootDir, id, options.module, modData);

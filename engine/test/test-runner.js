@@ -315,9 +315,9 @@ function testConfirmDraftDeltaAndPropagation() {
     ]),
   ]);
   mustOk(updateAggSchema, 'update aggregate schema');
-  const propagateAgg = runCli(['propagate', 'agg-order']);
-  mustOk(propagateAgg, 'propagate aggregate update');
-  assert((propagateAgg.data.marked_stale || []).includes('act-pay'), 'aggregate update propagates to action');
+  // update 命令现在自动触发传播，不再需要手动 propagate
+  assert(Array.isArray(updateAggSchema.data.marked_stale), 'update returns marked_stale array');
+  assert((updateAggSchema.data.marked_stale || []).includes('act-pay'), 'update auto-propagates stale to downstream action');
 
   const confirmActAll = runCli(['confirm', 'act-pay', '--module', 'all']);
   mustOk(confirmActAll, 'confirm act-pay all');
@@ -394,6 +394,118 @@ function testConfirmDraftDeltaAndPropagation() {
   const archiveResp = runCli(['archive', 'delta-order-archive']);
   mustOk(archiveResp, 'archive');
   assertEq(archiveResp.data.archived, true, 'archive returns archived=true');
+}
+
+function testUpdatePropagation() {
+  console.log('\n=== Suite: update propagation chain ===');
+
+  // Setup: agg-prop-a -> act-prop-b -> journey-prop-c
+  const aggA = writeJson('cell-agg-prop-a.json', {
+    id: 'agg-prop-a',
+    kind: 'Aggregate',
+    intent: 'Propagation source aggregate',
+    depends_on: [],
+    schema: [{ name: 'id', type: 'string' }],
+    states: [{ name: 'created' }],
+    invariants: ['id unique'],
+  });
+  mustOk(runCli(['create', '--file', aggA]), 'create agg-prop-a');
+
+  const actB = writeJson('cell-act-prop-b.json', {
+    id: 'act-prop-b',
+    kind: 'Action',
+    intent: 'Propagation middle action',
+    depends_on: ['agg-prop-a'],
+    plan: 'initial plan',
+    contract: [{ when: 'x', then: 'y' }],
+    test: [{ scenario: 's', given: 'g', when: 'w', then: 't' }],
+  });
+  mustOk(runCli(['create', '--file', actB]), 'create act-prop-b');
+
+  const journeyC = writeJson('cell-journey-prop-c.json', {
+    id: 'journey-prop-c',
+    kind: 'Journey',
+    intent: 'Propagation leaf journey',
+    depends_on: ['act-prop-b'],
+    plan: 'flowchart TD\n  s[Start] --> b[act-prop-b]\n  b --> e[End]',
+    test: [{ scenario: 's', given: 'g', when: 'w', then: 't' }],
+  });
+  mustOk(runCli(['create', '--file', journeyC]), 'create journey-prop-c');
+
+  // Confirm all to clear initial stale
+  runCli(['confirm', 'agg-prop-a']);
+  runCli(['confirm', 'act-prop-b']);
+  runCli(['confirm', 'journey-prop-c']);
+
+  // Verify no stale before update
+  const staleBefore = runCli(['stale']);
+  mustOk(staleBefore, 'stale before update');
+  assertEq(staleBefore.data.stale_cells.length, 0, 'no stale cells before update');
+
+  // Test 1: update aggregate schema -> downstream action and journey should be stale
+  const updateSchema = runCli([
+    'update',
+    'agg-prop-a',
+    '--module',
+    'schema',
+    '--data',
+    JSON.stringify([
+      { name: 'id', type: 'string' },
+      { name: 'value', type: 'number' },
+    ]),
+  ]);
+  mustOk(updateSchema, 'update agg-prop-a schema');
+  assert(Array.isArray(updateSchema.data.marked_stale), 'update schema returns marked_stale');
+  assert(updateSchema.data.marked_stale.includes('act-prop-b'), 'schema update marks action stale');
+  assert(updateSchema.data.marked_stale.includes('journey-prop-c'), 'schema update marks journey stale');
+
+  const staleAfterSchema = runCli(['stale']);
+  mustOk(staleAfterSchema, 'stale after schema update');
+  const staleMap1 = Object.fromEntries((staleAfterSchema.data.stale_cells || []).map(c => [c.cell, c.stale_modules]));
+  assert(staleMap1['act-prop-b'] && staleMap1['act-prop-b'].includes('plan'), 'action plan stale after schema update');
+  assert(staleMap1['act-prop-b'] && staleMap1['act-prop-b'].includes('contract'), 'action contract stale after schema update');
+  assert(staleMap1['journey-prop-c'] && staleMap1['journey-prop-c'].includes('plan'), 'journey plan stale after schema update');
+
+  // Confirm stale cells
+  runCli(['confirm', 'act-prop-b']);
+  runCli(['confirm', 'journey-prop-c']);
+
+  // Test 2: update action intent -> downstream journey should be stale
+  const updateIntent = runCli([
+    'update',
+    'act-prop-b',
+    '--module',
+    'intent',
+    '--data',
+    JSON.stringify('Updated action intent for propagation test'),
+  ]);
+  mustOk(updateIntent, 'update act-prop-b intent');
+  assert(Array.isArray(updateIntent.data.marked_stale), 'update intent returns marked_stale');
+  assert(updateIntent.data.marked_stale.includes('journey-prop-c'), 'intent update marks journey stale');
+
+  const staleAfterIntent = runCli(['stale']);
+  mustOk(staleAfterIntent, 'stale after intent update');
+  const staleMap2 = Object.fromEntries((staleAfterIntent.data.stale_cells || []).map(c => [c.cell, c.stale_modules]));
+  assert(staleMap2['journey-prop-c'] && staleMap2['journey-prop-c'].includes('plan'), 'journey plan stale after intent update');
+
+  // Test 3: update with no downstream -> marked_stale should be empty
+  runCli(['confirm', 'journey-prop-c']);
+  const updateNoDownstream = runCli([
+    'update',
+    'journey-prop-c',
+    '--module',
+    'intent',
+    '--data',
+    JSON.stringify('Leaf node intent update'),
+  ]);
+  mustOk(updateNoDownstream, 'update journey-prop-c intent (leaf)');
+  assert(Array.isArray(updateNoDownstream.data.marked_stale), 'leaf update returns marked_stale');
+  assertEq(updateNoDownstream.data.marked_stale.length, 0, 'leaf update marks no cells stale');
+
+  // Cleanup
+  runCli(['delete', 'journey-prop-c']);
+  runCli(['delete', 'act-prop-b']);
+  runCli(['delete', 'agg-prop-a']);
 }
 
 function testErrorPaths() {
@@ -485,6 +597,7 @@ async function main() {
     testGlossaryAndInit();
     testCellValidationAndLifecycle();
     testConfirmDraftDeltaAndPropagation();
+    testUpdatePropagation();
     testErrorPaths();
     testRootFlag();
 

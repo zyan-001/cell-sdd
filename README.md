@@ -53,6 +53,9 @@ node engine/cell.js init --project-root "D:/projects/your-app"
 node engine/server.js --project-root "D:/projects/your-app"
 
 # 前端页面（默认 5173）
+# 可选：显式指定 Vite 临时目录，避免沙箱写权限问题
+# PowerShell: $env:VITE_TMP_DIR="D:/projects/your-app/.cursor-tmp/vite"; cd web; npm run dev
+# 说明：dev 脚本默认使用 `--configLoader runner`，可规避配置加载阶段写入 `.vite-temp`
 cd web && npm run dev
 ```
 

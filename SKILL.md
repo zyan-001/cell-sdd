@@ -63,7 +63,7 @@ engine:
 2. 若 `engine/node_modules` 不存在，则执行依赖安装。
 3. 初始化规范仓库：`node <skill-dir>/engine/cell.js init --root <用户项目目录>`。
 4. 启动后端：`node <skill-dir>/engine/server.js --root <用户项目目录>`。
-5. 启动前端：`cd <skill-dir>/web && npm run dev`。
+5. 启动前端：优先由调用方显式提供 `VITE_TMP_DIR`，再执行 `cd <skill-dir>/web && npm run dev`（示例：PowerShell 里先 `$env:VITE_TMP_DIR="<用户项目目录>/.cursor-tmp/vite"`）。`web` 的 dev 脚本默认使用 `vite --configLoader runner`，规避配置加载阶段写入 `.vite-temp`。
 6. 验证引擎可读：`node <skill-dir>/engine/cell.js list --root <用户项目目录>`。
 
 > 若未传 `--root`，CLI 和 Server 会从 `process.cwd()` 向上查找 `.sdd/`——这意味着你必须从用户项目目录内执行命令。**推荐始终传 `--root`，避免 CWD 依赖。**

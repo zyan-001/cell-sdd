@@ -1,3 +1,4 @@
+import { SchemaView, StatesView, InvariantsView } from './AggregateViews';
 import { useState } from 'react';
 import type { ModuleName, ContractItem, LegacyContractItem, TestItem } from '../types';
 import ContractView from './ContractView';
@@ -149,9 +150,15 @@ export default function ModuleCard({
         ) : hasStructuredView ? (
           title === 'contract' ? (
             <ContractView items={structuredData as (ContractItem | LegacyContractItem)[]} />
-          ) : (
+          ) : title === 'test' ? (
             <TestView items={structuredData as TestItem[]} />
-          )
+          ) : title === 'schema' ? (
+            <SchemaView items={structuredData as SchemaField[]} />
+          ) : title === 'states' ? (
+            <StatesView items={structuredData as StateItem[]} />
+          ) : title === 'invariants' ? (
+            <InvariantsView items={structuredData as string[]} />
+          ) : null
         ) : null}
       </div>
     </div>
