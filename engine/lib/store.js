@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
-const { validateCell, validateDelta, validateModule, validateModuleForKind } = require('./validate');
+const { validateCell, validateDelta, validateDeltaForTargetKind, validateModule, validateModuleForKind } = require('./validate');
 
 const SDD_DIR = '.sdd';
 const CELLS_DIR = 'cells';
@@ -226,6 +226,13 @@ function createDelta(rootDir, data) {
   const targetPath = cellFilePath(rootDir, data.target);
   if (!fs.existsSync(targetPath)) {
     throw new Error(`目标 Cell "${data.target}" 不存在`);
+  }
+
+  // 校验 Delta 模块是否匹配目标 Cell 的 kind
+  const targetCell = readCell(rootDir, data.target);
+  const kindValidation = validateDeltaForTargetKind(data, targetCell.kind);
+  if (!kindValidation.valid) {
+    throw new Error(`校验失败: ${kindValidation.errors.join('; ')}`);
   }
 
   const filePath = deltaFilePath(rootDir, data.id);

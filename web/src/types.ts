@@ -105,6 +105,7 @@ export interface GraphEdge {
   id: string;
   source: string;
   target: string;
+  depKind?: string;
 }
 
 export interface GraphData {

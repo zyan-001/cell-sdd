@@ -180,9 +180,9 @@ async function runApiTests(ctx) {
       id: 'delta-api',
       target: 'agg-api',
       intent: 'api delta',
-      plan: 'delta plan',
-      contract: [{ when: 'x', then: 'y' }],
-      test: [{ scenario: 's', given: 'g', when: 'w', then: 't' }],
+      schema: [{ name: 'status', type: 'string' }],
+      states: [{ name: 'active' }],
+      invariants: ['status must be set'],
       depends_on: [],
     });
     assertEq(deltaCreate.status, 200, 'POST /api/deltas');
@@ -206,9 +206,7 @@ async function runApiTests(ctx) {
       id: 'delta-api-archive',
       target: 'agg-api',
       intent: 'archive',
-      plan: 'p',
-      contract: [{ when: 'x', then: 'y' }],
-      test: [{ scenario: 's', given: 'g', when: 'w', then: 't' }],
+      schema: [{ name: 'archived_at', type: 'string' }],
       depends_on: [],
     });
     assertEq(deltaArchiveCreate.status, 200, 'POST /api/deltas archive case');
@@ -220,6 +218,16 @@ async function runApiTests(ctx) {
 
     const badCellRead = await requestJson(port, 'GET', '/api/cells/no-such-cell');
     assertEq(badCellRead.status, 404, 'GET missing cell returns 404');
+
+    // 测试 Delta kind 校验：contract 不能指向 Aggregate
+    const deltaWithContractForAgg = await requestJson(port, 'POST', '/api/deltas', {
+      id: 'delta-agg-bad',
+      target: 'agg-api',
+      intent: 'bad delta with contract',
+      contract: [{ when: 'x', then: 'y' }],
+      depends_on: [],
+    });
+    assertEq(deltaWithContractForAgg.status, 400, 'Delta with contract targeting Aggregate should fail');
   } finally {
     serverProc.kill('SIGTERM');
     await sleep(100);
@@ -229,4 +237,50 @@ async function runApiTests(ctx) {
   }
 }
 
-module.exports = { runApiTests };
+async function runApiRootTests(ctx) {
+  const { serverPath, assert, assertEq } = ctx;
+  const os = require('os');
+  const path = require('path');
+
+  console.log('\n=== Suite: server --root flag ===');
+
+  // 创建独立项目目录
+  const extDir = path.join(os.tmpdir(), `cell-sdd-ext-api-${Date.now()}`);
+  const fs = require('fs');
+  fs.mkdirSync(extDir, { recursive: true });
+
+  // 用 CLI 在 extDir 初始化
+  ctx.runCli(['init', '--root', extDir], extDir);
+
+  const port = 3600 + Math.floor(Math.random() * 500);
+  // 从另一个目录启动 server，但传 --root 指向 extDir
+  const serverProc = spawn('node', [serverPath, '--root', extDir], {
+    cwd: os.tmpdir(),  // CWD 不是 extDir，验证 --root 生效
+    env: {
+      ...process.env,
+      PORT: String(port),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  try {
+    await waitForServerReady(serverProc);
+
+    // 验证 API 指向 --root 目录
+    const listResp = await requestJson(port, 'GET', '/api/cells');
+    assertEq(listResp.status, 200, 'GET /api/cells with --root');
+    assert(Array.isArray(listResp.data.cells), 'cells array with --root');
+
+    const glossaryResp = await requestJson(port, 'GET', '/api/glossary');
+    assertEq(glossaryResp.status, 200, 'GET /api/glossary with --root');
+  } finally {
+    serverProc.kill('SIGTERM');
+    await sleep(100);
+    if (serverProc.exitCode === null) {
+      serverProc.kill('SIGKILL');
+    }
+    fs.rmSync(extDir, { recursive: true, force: true });
+  }
+}
+
+module.exports = { runApiTests, runApiRootTests };

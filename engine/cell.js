@@ -94,6 +94,9 @@ function parseArgs(argv) {
     } else if (args[i] === '--hops' && i + 1 < args.length) {
       options.hops = parseInt(args[i + 1], 10);
       i++;
+    } else if (args[i] === '--root' && i + 1 < args.length) {
+      options.root = path.resolve(args[i + 1]);
+      i++;
     } else if (args[i] === '--force') {
       options.force = true;
     } else {
@@ -113,8 +116,11 @@ Cell-Based SDD 引擎
 
 用法: node cell.js <command> [options]
 
+全局选项:
+  --root <path>                  指定用户项目根目录（.sdd/ 所在目录）
+
 项目管理:
-  init                           初始化项目
+  init [--root <path>]           初始化项目
 
 全局基线管理:
   glossary-read                  读取全局基线
@@ -162,17 +168,29 @@ Delta 管理:
   }
 
   try {
-    // init 不需要项目根目录
+    // 解析 --root：显式指定项目根目录，优先于 process.cwd()
+    const fs = require('fs');
+    const explicitRoot = options.root || null;
+
+    // init 不需要已有 .sdd/
     if (command === 'init') {
-      const rootDir = process.cwd();
-      output(initProject(rootDir));
+      const initRoot = explicitRoot || process.cwd();
+      output(initProject(initRoot));
       return;
     }
 
     // 其他命令需要找到项目根目录
-    const rootDir = findProjectRoot(process.cwd());
-    if (!rootDir) {
-      outputError('未找到 .sdd/ 目录，请先运行 node cell.js init');
+    let rootDir;
+    if (explicitRoot) {
+      if (!fs.existsSync(path.join(explicitRoot, '.sdd'))) {
+        outputError(`指定根目录 ${explicitRoot} 下不存在 .sdd/，请先运行 init`);
+      }
+      rootDir = explicitRoot;
+    } else {
+      rootDir = findProjectRoot(process.cwd());
+      if (!rootDir) {
+        outputError('未找到 .sdd/ 目录，请先运行 node cell.js init');
+      }
     }
 
     switch (command) {

@@ -362,6 +362,15 @@ function validateModule(module, data) {
     return { valid: false, errors };
   }
 
+  // 检测常见的"多包一层"错误：update --module schema 的 JSON 应为 [...], 而非 {"schema": [...]}
+  const ARRAY_MODULES = new Set(['contract', 'test', 'depends_on', 'schema', 'states', 'invariants', 'requires_state']);
+  if (ARRAY_MODULES.has(module)) {
+    if (data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length === 1 && data[module] !== undefined) {
+      errors.push(`${module}: 传入的是对象而非数组。update --module ${module} 的 JSON 根结构必须是数组，不要写成 {"${module}": [...]}, 直接写 [...] 即可`);
+      return { valid: false, errors };
+    }
+  }
+
   if (module === 'intent' || module === 'plan') {
     if (typeof data !== 'string' || data.length === 0) {
       errors.push(`${module}: 必须是非空字符串`);
@@ -406,6 +415,22 @@ function validateModuleForKind(kind, module) {
   return { valid: true };
 }
 
+function validateDeltaForTargetKind(data, targetKind) {
+  const errors = [];
+  const allowed = MODULES_BY_KIND[targetKind];
+  if (!allowed) {
+    errors.push(`目标 Cell 类型 ${targetKind} 不支持 Delta 模块校验`);
+    return { valid: false, errors };
+  }
+  const moduleKeys = ['plan', 'contract', 'test', 'schema', 'states', 'invariants', 'requires_state'];
+  for (const key of moduleKeys) {
+    if (data[key] !== undefined && !allowed.has(key)) {
+      errors.push(`${targetKind} Cell 不允许包含 ${key} 模块，Delta 不能追加该模块`);
+    }
+  }
+  return errors.length === 0 ? { valid: true } : { valid: false, errors };
+}
+
 function validateTerm(data) {
   const errors = [];
 
@@ -437,10 +462,12 @@ function validateTerm(data) {
 module.exports = {
   validateCell,
   validateDelta,
+  validateDeltaForTargetKind,
   validateModule,
   validateModuleForKind,
   validateDependsOn,
   extractDepId,
   VALID_MODULES,
   validateTerm,
+  MODULES_BY_KIND,
 };

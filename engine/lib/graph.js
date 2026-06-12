@@ -373,12 +373,30 @@ function evaluateGlobalImpact(rootDir, cellId, module, nextData) {
     reasons.push('contract 不能为空，无法确认');
   }
 
+  // 按受影响 Cell 的 kind 动态计算受影响模块（取并集）
+  const affectedModuleSet = new Set();
+  for (const affectedId of impact.affected) {
+    const affectedCell = cells.get(affectedId);
+    if (affectedCell) {
+      const kind = affectedCell.kind;
+      if (kind === 'Aggregate') {
+        ['schema', 'states', 'invariants'].forEach(m => affectedModuleSet.add(m));
+      } else if (kind === 'Action') {
+        ['plan', 'contract', 'test'].forEach(m => affectedModuleSet.add(m));
+      } else if (kind === 'Journey') {
+        ['plan', 'test'].forEach(m => affectedModuleSet.add(m));
+      } else {
+        ['plan', 'contract', 'test'].forEach(m => affectedModuleSet.add(m));
+      }
+    }
+  }
+
   return {
     blocked: reasons.length > 0,
     reasons,
     impact,
     current_cell_impacted_modules: impactedModulesForCurrent(module, cell.kind),
-    affected_cell_impacted_modules: ['plan', 'contract', 'test'],
+    affected_cell_impacted_modules: [...affectedModuleSet],
   };
 }
 

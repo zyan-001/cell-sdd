@@ -236,6 +236,14 @@ function testCellValidationAndLifecycle() {
   const sliceResp = runCli(['slice', 'act-pay', '--hops', '1']);
   mustOk(sliceResp, 'slice');
   assertEq(sliceResp.data.root, 'act-pay', 'slice root is act-pay');
+
+  // 测试 evaluateGlobalImpact 按下游 kind 返回受影响模块
+  // agg-order -> act-pay(Action) -> journey-checkout(Journey)
+  // 对 agg-order 的 schema 做 confirm-module 评估时，下游应包含 Action 和 Journey 各自的模块
+  const impactResp = runCli(['impact', 'agg-order']);
+  mustOk(impactResp, 'impact agg-order');
+  assert(impactResp.data.affected.includes('act-pay'), 'agg-order affects act-pay');
+  assert(impactResp.data.affected.includes('journey-checkout'), 'agg-order affects journey-checkout');
 }
 
 function testConfirmDraftDeltaAndPropagation() {
@@ -324,6 +332,18 @@ function testConfirmDraftDeltaAndPropagation() {
   assert((impactByTerms.data.affected_cells || []).includes('agg-order'), 'glossary-impact includes agg-order');
 
   // Delta workflow
+  // 测试：Delta 模块必须匹配目标 Cell 的 kind
+  const deltaWithContractForAgg = writeJson('delta-agg-with-contract.json', {
+    id: 'delta-agg-bad',
+    target: 'agg-order',
+    intent: 'bad delta with contract for aggregate',
+    contract: [{ when: 'x', then: 'y' }],
+    depends_on: [],
+  });
+  mustFail(runCli(['delta-create', '--file', deltaWithContractForAgg]), 'delta with contract targeting Aggregate should fail');
+  // 清理临时文件
+  try { fs.unlinkSync(deltaWithContractForAgg); } catch {}
+
   const deltaFile = writeJson('delta-order-enrich.json', {
     id: 'delta-order-enrich',
     target: 'agg-order',
@@ -365,9 +385,9 @@ function testConfirmDraftDeltaAndPropagation() {
     id: 'delta-order-archive',
     target: 'agg-order',
     intent: 'archive flow',
-    plan: 'archive example',
-    contract: [{ when: 'x', then: 'y' }],
-    test: [{ scenario: 's', given: 'g', when: 'w', then: 't' }],
+    schema: [{ name: 'archived_at', type: 'string' }],
+    states: [{ name: 'archived' }],
+    invariants: ['archived_at must be set'],
     depends_on: [],
   });
   mustOk(runCli(['delta-create', '--file', deltaArchiveFile]), 'delta-create for archive');
@@ -408,6 +428,55 @@ function testErrorPaths() {
   mustFail(invalidModule, 'update invalid module');
 }
 
+function testRootFlag() {
+  console.log('\n=== Suite: --root flag ===');
+
+  // 创建一个独立于 TEST_DIR 的外部项目目录
+  const extDir = path.join(os.tmpdir(), `cell-sdd-ext-${Date.now()}`);
+  fs.mkdirSync(extDir, { recursive: true });
+
+  try {
+    // 从 TEST_DIR（另一个目录）使用 --root 在 extDir 初始化
+    const initResp = runCli(['init', '--root', extDir], TEST_DIR);
+    mustOk(initResp, 'init with --root from different cwd');
+    assert(fs.existsSync(path.join(extDir, '.sdd', 'glossary.yaml')), '.sdd created in --root directory');
+
+    // 从 TEST_DIR 使用 --root 在 extDir 创建 Cell
+    const createResp = runCli([
+      'create',
+      '--root', extDir,
+      '--data',
+      JSON.stringify({
+        id: 'ext-agg',
+        kind: 'Aggregate',
+        intent: 'external aggregate',
+        depends_on: [],
+        schema: [{ name: 'id', type: 'string' }],
+        states: [{ name: 'created' }],
+        invariants: ['id unique'],
+      }),
+    ], TEST_DIR);
+    mustOk(createResp, 'create cell with --root from different cwd');
+
+    // 从 TEST_DIR 使用 --root 列出 extDir 的 Cell
+    const listResp = runCli(['list', '--root', extDir], TEST_DIR);
+    mustOk(listResp, 'list with --root from different cwd');
+    assert((listResp.data.cells || []).some(c => c.id === 'ext-agg'), 'ext-agg appears in --root list');
+
+    // 不传 --root 且 CWD 不在 extDir → 应找不到
+    const noRootResp = runCli(['list'], TEST_DIR);
+    // TEST_DIR 也有 .sdd/，所以 list 应成功但内容不同
+    assert(!(noRootResp.data.cells || []).some(c => c.id === 'ext-agg'), 'ext-agg not in TEST_DIR list');
+
+    // --root 指向不存在 .sdd/ 的目录 → 应失败
+    const badDir = path.join(os.tmpdir(), `cell-sdd-noexist-${Date.now()}`);
+    const badResp = runCli(['list', '--root', badDir], TEST_DIR);
+    mustFail(badResp, 'list with --root pointing to non-initialized dir');
+  } finally {
+    fs.rmSync(extDir, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   console.log('Cell-SDD engine test runner');
   setup();
@@ -417,6 +486,7 @@ async function main() {
     testCellValidationAndLifecycle();
     testConfirmDraftDeltaAndPropagation();
     testErrorPaths();
+    testRootFlag();
 
     await runApiTests({
       testDir: TEST_DIR,
@@ -425,6 +495,14 @@ async function main() {
       assertEq,
       runCli,
       writeJson,
+    });
+
+    const { runApiRootTests } = require('./api-tests');
+    await runApiRootTests({
+      serverPath: SERVER_PATH,
+      assert,
+      assertEq,
+      runCli,
     });
   } catch (err) {
     failed += 1;

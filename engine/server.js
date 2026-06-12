@@ -3,6 +3,7 @@
 
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
 const path = require('path');
 const {
   findProjectRoot,
@@ -56,6 +57,10 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3210;
 
+// 解析 --root 命令行参数：显式指定用户项目根目录
+const ROOT_ARG = process.argv.find((a, i) => i > 1 && process.argv[i - 1] === '--root');
+const ROOT_DIR = ROOT_ARG ? path.resolve(ROOT_ARG) : null;
+
 app.use(cors());
 app.use(express.json({ limit: '10mb', strict: false }));
 
@@ -68,9 +73,14 @@ app.get('/', (req, res) => {
 
 // 获取项目根目录中间件
 function getRootDir(req, res, next) {
-  const rootDir = findProjectRoot(process.cwd());
+  let rootDir;
+  if (ROOT_DIR) {
+    rootDir = fs.existsSync(path.join(ROOT_DIR, '.sdd')) ? ROOT_DIR : null;
+  } else {
+    rootDir = findProjectRoot(process.cwd());
+  }
   if (!rootDir) {
-    return res.status(400).json({ error: '未找到 .sdd/ 目录，请先运行 node cell.js init' });
+    return res.status(400).json({ error: '未找到 .sdd/ 目录，请先运行 node cell.js init，或启动 server 时传入 --root <项目路径>' });
   }
   req.rootDir = rootDir;
   next();
@@ -79,8 +89,8 @@ function getRootDir(req, res, next) {
 // === 项目管理 ===
 app.post('/api/init', (req, res) => {
   try {
-    const result = initProject(process.cwd());
-    res.json(result);
+    const initRoot = ROOT_DIR || process.cwd();
+    res.json(initProject(initRoot));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -344,11 +354,16 @@ app.get('/api/graph/data', getRootDir, (req, res) => {
       });
     }
     for (const [source, deps] of adjacency) {
-      for (const dep of deps) {
+      const sourceCell = cells.get(source);
+      for (const rawDep of (sourceCell.depends_on || [])) {
+        const depId = typeof rawDep === 'string' ? rawDep : rawDep.id;
+        if (!depId) continue;
+        const depKind = (typeof rawDep === 'object' && rawDep.kind) ? rawDep.kind : undefined;
         edges.push({
-          id: `${source}->${dep}`,
+          id: `${source}->${depId}`,
           source,
-          target: dep,
+          target: depId,
+          depKind,
         });
       }
     }

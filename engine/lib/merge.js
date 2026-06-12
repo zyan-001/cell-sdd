@@ -145,6 +145,22 @@ function applyMerge(target, delta) {
   if (merged.invariants.length === 0) delete merged.invariants;
   if (merged.requires_state.length === 0) delete merged.requires_state;
 
+  // 校验合并结果是否违反 kind 约束
+  const kindAllowed = {
+    Aggregate: new Set(['intent', 'depends_on', 'schema', 'states', 'invariants']),
+    Action: new Set(['intent', 'depends_on', 'plan', 'contract', 'test', 'requires_state']),
+    Journey: new Set(['intent', 'depends_on', 'plan', 'test']),
+  };
+  if (merged.kind && kindAllowed[merged.kind]) {
+    const allowed = kindAllowed[merged.kind];
+    const illegalModules = Object.keys(merged).filter(
+      k => !k.startsWith('_') && !['id', 'version', 'kind', 'tags', 'entity'].includes(k) && !allowed.has(k)
+    );
+    if (illegalModules.length > 0) {
+      throw new Error(`合并结果违反 ${merged.kind} 类型约束：不允许包含 ${illegalModules.join(', ')} 模块`);
+    }
+  }
+
   return merged;
 }
 

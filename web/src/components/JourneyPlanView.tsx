@@ -11,7 +11,7 @@ function ensureMermaidInit() {
   if (mermaidInited) return;
   mermaid.initialize({
     startOnLoad: false,
-    securityLevel: 'loose',
+    securityLevel: 'strict',
     theme: 'default',
   });
   mermaidInited = true;

@@ -145,24 +145,6 @@ export default function DependencyGraph({ selectedCellId, onSelectCell, refreshK
   const loadGraph = useCallback(async (fitOnLoad: boolean) => {
     try {
       const data: GraphData = await api.getGraphData();
-      // Also load cell list to get depends_on kind info for edge labels
-      let cellDepKinds: Record<string, Record<string, string>> = {};
-      try {
-        const cellsData = await api.listCells();
-        // Build a map: cellId -> { depId -> kind }
-        for (const summary of cellsData.cells) {
-          try {
-            const cellData = await api.readCell(summary.id);
-            const depMap: Record<string, string> = {};
-            for (const dep of cellData.depends_on || []) {
-              if (typeof dep === 'object' && dep.kind) {
-                depMap[dep.id] = dep.kind;
-              }
-            }
-            cellDepKinds[summary.id] = depMap;
-          } catch { /* skip */ }
-        }
-      } catch { /* skip */ }
 
       const reactNodes: Node[] = data.nodes.map((n) => ({
         id: n.id,
@@ -174,13 +156,12 @@ export default function DependencyGraph({ selectedCellId, onSelectCell, refreshK
         },
       }));
       const reactEdges: Edge[] = data.edges.map((e) => {
-        const kind = cellDepKinds[e.source]?.[e.target];
         return {
           id: e.id,
           source: e.source,
           target: e.target,
           animated: true,
-          label: kind || undefined,
+          label: e.depKind || undefined,
           markerEnd: { type: MarkerType.ArrowClosed, color: '#6c63ff' },
           style: { stroke: '#6c63ff', strokeWidth: 2 },
           labelStyle: { fill: '#888', fontSize: 10, fontWeight: 500 },
